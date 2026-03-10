@@ -3,6 +3,7 @@ import { css } from "lit";
 export const cardStyles = css`
   :host {
     display: block;
+    height: 100%;
   }
 
   ha-card {
@@ -11,6 +12,7 @@ export const cardStyles = css`
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    height: 100%;
   }
 
   .card-header {
@@ -45,7 +47,9 @@ export const cardStyles = css`
 
   .mermaid-container svg {
     max-width: 100%;
+    max-height: 100%;
     height: auto;
+    object-fit: contain;
   }
 
   /* Fullscreen overlay */

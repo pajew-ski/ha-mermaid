@@ -552,11 +552,8 @@ class MermaidCard extends LitElement {
   protected render() {
     if (!this._config) return nothing;
 
-    const cardHeight = this._config.card_height;
-    const cardStyle = cardHeight ? `height: ${cardHeight}; overflow: hidden;` : "";
-
     return html`
-      <ha-card style=${cardStyle || nothing}>
+      <ha-card>
         ${this._config.title
           ? html`<div class="card-header">${this._config.title}</div>`
           : nothing}
