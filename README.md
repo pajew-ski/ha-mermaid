@@ -1,12 +1,12 @@
 # Mermaid Diagram Card for Home Assistant
 
-[![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![GitHub Release](https://img.shields.io/github/v/release/pajew-ski/ha-mermaid)](https://github.com/pajew-ski/ha-mermaid/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![HACS Badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/hacs/integration)
+[![GitHub Release](https://img.shields.io/github/v/release/pajew-ski/ha-mermaid?style=for-the-badge)](https://github.com/pajew-ski/ha-mermaid/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
 A custom Lovelace card that renders **Mermaid diagrams** natively in Home Assistant — with full theme integration so diagrams look like a natural part of your dashboard.
 
-![Example](https://mermaid.js.org/img/header.png)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=pajew-ski&repository=ha-mermaid&category=plugin)
 
 ## Features
 
@@ -21,11 +21,22 @@ A custom Lovelace card that renders **Mermaid diagrams** natively in Home Assist
 
 ### HACS (Recommended)
 
+Click the button above, or:
+
 1. Open **HACS** in your Home Assistant instance
-2. Click the three dots menu → **Custom repositories**
-3. Add `https://github.com/pajew-ski/ha-mermaid` with category **Lovelace**
-4. Click **Install**
-5. Refresh your browser (Ctrl+F5)
+2. Search for **Mermaid Diagram Card**
+3. Click **Download**
+4. Refresh your browser (Ctrl+F5)
+
+<details>
+<summary>Manual HACS install (if not in default store yet)</summary>
+
+1. Open HACS → three dots menu → **Custom repositories**
+2. Add `https://github.com/pajew-ski/ha-mermaid` with category **Plugin**
+3. Click **Download**
+4. Refresh your browser
+
+</details>
 
 ### Manual
 
@@ -285,6 +296,30 @@ npm run dev   # Watch mode — rebuilds on changes
 ```
 
 Copy `dist/ha-mermaid.js` to your HA `config/www/` directory and add it as a resource.
+
+### Publishing a Release
+
+1. Update version in `package.json` and `src/mermaid-card.ts`
+2. `npm run build`
+3. Commit and push
+4. Create a GitHub Release with tag `vX.Y.Z`
+5. The GitHub Action automatically attaches `ha-mermaid.js` to the release
+
+### HACS Store Checklist
+
+Before submitting to the [HACS default repository](https://github.com/hacs/default):
+
+- [ ] Repository has a **description** set on GitHub
+- [ ] Repository has **topics** set: `home-assistant`, `hacs`, `lovelace`, `mermaid`, `custom-card`
+- [ ] At least one **GitHub Release** is published (not just a tag)
+- [ ] `hacs.json` is valid and complete
+- [ ] HACS validation workflow passes (all checks green)
+- [ ] README contains installation and usage instructions
+
+Set topics via GitHub CLI:
+```bash
+gh repo edit --add-topic home-assistant,hacs,lovelace,mermaid,custom-card,hacktoberfest
+```
 
 ## License
 

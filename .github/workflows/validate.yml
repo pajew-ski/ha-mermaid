@@ -8,15 +8,27 @@ on:
 jobs:
   validate-hacs:
     runs-on: ubuntu-latest
+    name: HACS Validation
     steps:
       - uses: actions/checkout@v4
-      - name: HACS Validation
+      - name: HACS Action
         uses: hacs/action@main
         with:
           category: plugin
+          # No 'ignore' field — all checks run:
+          # archived, description, hacsjson, information, topics
+
+  validate-hassfest:
+    runs-on: ubuntu-latest
+    name: Hassfest Validation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+        continue-on-error: true
 
   build:
     runs-on: ubuntu-latest
+    name: Build
     steps:
       - uses: actions/checkout@v4
 
@@ -27,3 +39,6 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+
+      - name: Verify dist output exists
+        run: test -f dist/ha-mermaid.js
