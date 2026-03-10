@@ -25,11 +25,157 @@ export const cardStyles = css`
     overflow-x: auto;
     overflow-y: hidden;
     min-height: 48px;
+    cursor: pointer;
+    position: relative;
+  }
+
+  .mermaid-container:hover::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--primary-color, #03a9f4);
+    opacity: 0.04;
+    border-radius: var(--ha-card-border-radius, 12px);
+    pointer-events: none;
+    transition: opacity 0.2s ease;
   }
 
   .mermaid-container svg {
     max-width: 100%;
     height: auto;
+  }
+
+  /* Fullscreen overlay */
+  .mermaid-fullscreen-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: var(--ha-card-background, var(--card-background-color, #fff));
+    display: flex;
+    flex-direction: column;
+    animation: mermaid-fade-in 0.2s ease;
+  }
+
+  @keyframes mermaid-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .fullscreen-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--divider-color, #e0e0e0);
+    flex-shrink: 0;
+    background: var(--ha-card-background, var(--card-background-color, #fff));
+    z-index: 1;
+  }
+
+  .fullscreen-title {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--primary-text-color, #212121);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .fullscreen-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .fullscreen-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: none;
+    background: transparent;
+    color: var(--primary-text-color, #212121);
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    transition: background 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .fullscreen-btn:hover {
+    background: var(--secondary-background-color, #e5e5e5);
+  }
+
+  .fullscreen-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+    flex-shrink: 0;
+  }
+
+  .fullscreen-btn-close {
+    color: var(--primary-text-color, #212121);
+  }
+
+  .fullscreen-viewport {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    touch-action: none;
+  }
+
+  .fullscreen-content {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform-origin: 0 0;
+  }
+
+  .fullscreen-content svg {
+    max-width: none;
+    max-height: none;
+  }
+
+  .fullscreen-zoom-controls {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 2;
+  }
+
+  .zoom-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--divider-color, #e0e0e0);
+    background: var(--ha-card-background, var(--card-background-color, #fff));
+    color: var(--primary-text-color, #212121);
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: background 0.15s ease;
+    line-height: 1;
+  }
+
+  .zoom-btn:hover {
+    background: var(--secondary-background-color, #e5e5e5);
+  }
+
+  .zoom-level {
+    text-align: center;
+    font-size: 11px;
+    color: var(--secondary-text-color, #727272);
+    padding: 2px 0;
   }
 
   .mermaid-error {
