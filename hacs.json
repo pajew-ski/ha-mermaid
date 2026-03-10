@@ -1,0 +1,6 @@
+{
+  "name": "Mermaid Diagram Card",
+  "render_readme": true,
+  "filename": "ha-mermaid.js",
+  "content_in_root": false
+}
