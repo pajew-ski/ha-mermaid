@@ -88,6 +88,7 @@ class MermaidCard extends LitElement {
     super.disconnectedCallback();
     this._clearDebounce();
     this._clearInterval();
+    this._removeViewportListeners();
     document.removeEventListener("keydown", this._onEscKey);
   }
 
@@ -128,17 +129,6 @@ class MermaidCard extends LitElement {
       this._lastEntityStates[entityId] = current;
     }
     return changed;
-  }
-
-  updated(changedProps: Map<string, unknown>): void {
-    super.updated(changedProps);
-
-    // When hass changes, only re-render if watched entities changed
-    if (changedProps.has("hass") && this._watchedEntities.length > 0) {
-      if (!this._hasRelevantChanges()) return;
-    }
-
-    this._scheduleRender();
   }
 
   /**
@@ -306,7 +296,44 @@ class MermaidCard extends LitElement {
 
   private _closeFullscreen(): void {
     this._fullscreen = false;
+    this._removeViewportListeners();
     document.removeEventListener("keydown", this._onEscKey);
+  }
+
+  /**
+   * Attach touch/wheel listeners imperatively with { passive: false }
+   * so we can call preventDefault() without Chrome's non-passive warning.
+   */
+  private _attachViewportListeners(): void {
+    const vp = this.shadowRoot?.querySelector(".fullscreen-viewport");
+    if (!vp) return;
+    vp.addEventListener("touchstart", this._onTouchStart as EventListener, { passive: false });
+    vp.addEventListener("touchmove", this._onTouchMove as EventListener, { passive: false });
+    vp.addEventListener("wheel", this._onWheel as EventListener, { passive: false });
+  }
+
+  private _removeViewportListeners(): void {
+    const vp = this.shadowRoot?.querySelector(".fullscreen-viewport");
+    if (!vp) return;
+    vp.removeEventListener("touchstart", this._onTouchStart as EventListener);
+    vp.removeEventListener("touchmove", this._onTouchMove as EventListener);
+    vp.removeEventListener("wheel", this._onWheel as EventListener);
+  }
+
+  protected updated(changedProps: Map<string, unknown>): void {
+    super.updated(changedProps);
+
+    // When hass changes, only re-render if watched entities changed
+    if (changedProps.has("hass") && this._watchedEntities.length > 0) {
+      if (!this._hasRelevantChanges()) return;
+    }
+
+    this._scheduleRender();
+
+    // Attach listeners after fullscreen renders into the DOM
+    if (changedProps.has("_fullscreen") && this._fullscreen) {
+      this.updateComplete.then(() => this._attachViewportListeners());
+    }
   }
 
   private _onEscKey = (e: KeyboardEvent): void => {
@@ -608,9 +635,6 @@ class MermaidCard extends LitElement {
           @pointermove=${this._onPointerMove}
           @pointerup=${this._onPointerUp}
           @pointercancel=${this._onPointerUp}
-          @touchstart=${this._onTouchStart}
-          @touchmove=${this._onTouchMove}
-          @wheel=${this._onWheel}
         >
           <div class="fullscreen-content"
             style="transform: ${transform}; transform-origin: center center;"
