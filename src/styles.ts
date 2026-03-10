@@ -3,11 +3,16 @@ import { css } from "lit";
 export const cardStyles = css`
   :host {
     display: block;
+    height: 100%;
   }
 
   ha-card {
     overflow: hidden;
     padding: 16px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
   }
 
   .card-header {
@@ -22,9 +27,9 @@ export const cardStyles = css`
     display: flex;
     justify-content: center;
     align-items: center;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: auto;
     min-height: 48px;
+    flex: 1;
     cursor: pointer;
     position: relative;
   }
@@ -42,7 +47,9 @@ export const cardStyles = css`
 
   .mermaid-container svg {
     max-width: 100%;
+    max-height: 100%;
     height: auto;
+    object-fit: contain;
   }
 
   /* Fullscreen overlay */

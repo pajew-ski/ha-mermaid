@@ -219,8 +219,9 @@ class MermaidCard extends LitElement {
     const groups = svgEl.querySelectorAll("g");
     for (const g of groups) {
       // Find background shape (rect, circle, ellipse, polygon, path with fill)
+      // Mindmap nodes use <path> elements for their shapes
       const shape = g.querySelector<SVGElement>(
-        "rect, circle, ellipse, polygon"
+        "rect, circle, ellipse, polygon, path"
       );
       if (!shape) continue;
 
@@ -228,6 +229,13 @@ class MermaidCard extends LitElement {
         shape.style?.fill ||
         "";
       if (!fill || fill === "none" || fill === "transparent") continue;
+
+      // Skip tiny path elements (likely arrows/connectors, not node backgrounds)
+      if (shape.tagName === "path") {
+        const d = shape.getAttribute("d") || "";
+        // Very short path data likely means it's a marker/arrow, not a shape
+        if (d.length < 20) continue;
+      }
 
       // Find text elements in this group
       const texts = g.querySelectorAll<SVGElement>("text, foreignObject span, foreignObject div, foreignObject p");
@@ -441,6 +449,34 @@ class MermaidCard extends LitElement {
     // Ensure xmlns is set
     svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
 
+    // Remove any foreignObject elements that could taint the canvas
+    const foreignObjects = svgEl.querySelectorAll("foreignObject");
+    for (const fo of foreignObjects) {
+      // Try to extract text content and replace with a simple SVG text element
+      const textContent = fo.textContent?.trim() || "";
+      if (textContent) {
+        const svgText = doc.createElementNS("http://www.w3.org/2000/svg", "text");
+        const x = fo.getAttribute("x") || "0";
+        const y = fo.getAttribute("y") || "0";
+        const width = fo.getAttribute("width") || "100";
+        const height = fo.getAttribute("height") || "20";
+        svgText.setAttribute("x", String(parseFloat(x) + parseFloat(width) / 2));
+        svgText.setAttribute("y", String(parseFloat(y) + parseFloat(height) / 2));
+        svgText.setAttribute("text-anchor", "middle");
+        svgText.setAttribute("dominant-baseline", "central");
+        svgText.setAttribute("font-size", "14");
+        // Inherit fill from closest parent or use a safe default
+        const parentFill = fo.closest("[fill]")?.getAttribute("fill");
+        const foStyle = fo.querySelector("[style]");
+        const colorMatch = foStyle?.getAttribute("style")?.match(/color:\s*([^;]+)/);
+        svgText.setAttribute("fill", colorMatch?.[1] || parentFill || "currentColor");
+        svgText.textContent = textContent;
+        fo.parentNode?.replaceChild(svgText, fo);
+      } else {
+        fo.remove();
+      }
+    }
+
     let width = parseFloat(svgEl.getAttribute("width") || "0");
     let height = parseFloat(svgEl.getAttribute("height") || "0");
     const viewBox = svgEl.getAttribute("viewBox");
@@ -470,25 +506,24 @@ class MermaidCard extends LitElement {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.scale(scale, scale);
 
+    // Use data URI instead of blob URL to avoid tainted canvas security issues
     const serialized = new XMLSerializer().serializeToString(svgEl);
-    const blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    const base64 = btoa(unescape(encodeURIComponent(serialized)));
+    const dataUrl = `data:image/svg+xml;base64,${base64}`;
 
     return new Promise<void>((resolve) => {
       const img = new Image();
       img.onload = () => {
         ctx.drawImage(img, 0, 0, width, height);
-        URL.revokeObjectURL(url);
         canvas.toBlob((pngBlob) => {
           if (pngBlob) this._triggerDownload(pngBlob, `${name}.png`);
           resolve();
         }, "image/png");
       };
       img.onerror = () => {
-        URL.revokeObjectURL(url);
         resolve();
       };
-      img.src = url;
+      img.src = dataUrl;
     });
   }
 

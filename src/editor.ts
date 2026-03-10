@@ -209,7 +209,7 @@ export class MermaidCardEditor extends LitElement {
             placeholder="auto"
           />
           <span class="help-text">
-            Override the card height in the dashboard grid (1-20).
+            Override the card height hint for the dashboard grid layout (1-20).
           </span>
         </div>
       </div>
