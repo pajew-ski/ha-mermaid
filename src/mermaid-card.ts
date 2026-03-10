@@ -2,7 +2,7 @@ import { LitElement, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import mermaid from "mermaid";
 import type { MermaidCardConfig, HomeAssistant } from "./types";
-import { getHAThemeVariables } from "./theme-mapper";
+import { getHAThemeVariables, contrastTextColor } from "./theme-mapper";
 import { renderTemplate, extractReferencedEntities } from "./template-renderer";
 import { cardStyles } from "./styles";
 import "./editor";
@@ -189,7 +189,7 @@ class MermaidCard extends LitElement {
       const id = `mermaid-${++renderCounter}`;
       const { svg } = await mermaid.render(id, resolvedContent);
 
-      this._svgContent = svg;
+      this._svgContent = this._postProcessSvg(svg);
       this._loading = false;
     } catch (err) {
       this._loading = false;
@@ -201,6 +201,89 @@ class MermaidCard extends LitElement {
           .trim() || "Failed to render diagram. Check your Mermaid syntax.";
       this._svgContent = "";
     }
+  }
+
+  /**
+   * Post-process rendered SVG to fix text contrast issues.
+   * Mermaid uses the same themeVariables for different contexts (e.g.
+   * primaryTextColor for both flowchart node text and mindmap node text),
+   * but node backgrounds differ. This finds nodes with poor contrast and fixes them.
+   */
+  private _postProcessSvg(svg: string): string {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svg, "image/svg+xml");
+    const svgEl = doc.querySelector("svg");
+    if (!svgEl) return svg;
+
+    // Find all groups that look like nodes (contain a shape + text)
+    const groups = svgEl.querySelectorAll("g");
+    for (const g of groups) {
+      // Find background shape (rect, circle, ellipse, polygon, path with fill)
+      const shape = g.querySelector<SVGElement>(
+        "rect, circle, ellipse, polygon"
+      );
+      if (!shape) continue;
+
+      const fill = shape.getAttribute("fill") ||
+        shape.style?.fill ||
+        "";
+      if (!fill || fill === "none" || fill === "transparent") continue;
+
+      // Find text elements in this group
+      const texts = g.querySelectorAll<SVGElement>("text, foreignObject span, foreignObject div, foreignObject p");
+      if (texts.length === 0) continue;
+
+      // Compute ideal text color for this background
+      const idealColor = contrastTextColor(fill);
+
+      for (const text of texts) {
+        // Get current text color
+        const currentFill = text.getAttribute("fill") ||
+          text.style?.color ||
+          text.style?.fill || "";
+
+        if (!currentFill || currentFill === "none") {
+          text.setAttribute("fill", idealColor);
+          text.style.color = idealColor;
+          continue;
+        }
+
+        // Check if current text has poor contrast against background
+        // Parse both colors and check luminance difference
+        try {
+          const ctx = document.createElement("canvas").getContext("2d")!;
+          ctx.fillStyle = fill;
+          const bgResolved = ctx.fillStyle;
+          ctx.fillStyle = currentFill;
+          const fgResolved = ctx.fillStyle;
+
+          if (bgResolved && fgResolved) {
+            const bgLum = this._luminance(bgResolved);
+            const fgLum = this._luminance(fgResolved);
+            const ratio = (Math.max(bgLum, fgLum) + 0.05) /
+              (Math.min(bgLum, fgLum) + 0.05);
+
+            // WCAG AA requires 4.5:1, but we fix anything below 3:1
+            if (ratio < 3) {
+              text.setAttribute("fill", idealColor);
+              text.style.color = idealColor;
+            }
+          }
+        } catch {
+          // Ignore color parsing errors
+        }
+      }
+    }
+
+    return new XMLSerializer().serializeToString(svgEl);
+  }
+
+  private _luminance(hexColor: string): number {
+    const hex = hexColor.replace("#", "");
+    const r = parseInt(hex.slice(0, 2), 16) / 255;
+    const g = parseInt(hex.slice(2, 4), 16) / 255;
+    const b = parseInt(hex.slice(4, 6), 16) / 255;
+    return 0.299 * r + 0.587 * g + 0.114 * b;
   }
 
   // --- Fullscreen & Zoom ---
@@ -297,7 +380,9 @@ class MermaidCard extends LitElement {
 
   private _downloadSvg(): void {
     if (!this._svgContent) return;
-    const blob = new Blob([this._svgContent], { type: "image/svg+xml" });
+    // Add XML declaration and namespace for standalone SVG file
+    const svgWithNs = this._prepareSvgForExport(this._svgContent);
+    const blob = new Blob([svgWithNs], { type: "image/svg+xml;charset=utf-8" });
     const name = (this._config?.title || "mermaid-diagram").replace(/\s+/g, "-");
     this._triggerDownload(blob, `${name}.svg`);
   }
@@ -306,55 +391,116 @@ class MermaidCard extends LitElement {
     if (!this._svgContent) return;
     const name = (this._config?.title || "mermaid-diagram").replace(/\s+/g, "-");
 
-    // Parse SVG to get dimensions
+    // Re-render with htmlLabels disabled to get pure SVG (no foreignObject)
+    // This ensures the image can be drawn to canvas without CORS/security issues
+    try {
+      const resolvedContent = renderTemplate(this._config!.content, this.hass);
+      const useAutoTheme = !this._config!.theme || this._config!.theme === "auto";
+
+      const exportConfig: Record<string, unknown> = {
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: useAutoTheme ? "base" : this._config!.theme,
+        fontFamily: "'Roboto', 'Noto', sans-serif",
+        flowchart: { htmlLabels: false },
+        sequence: { htmlLabels: false },
+      };
+
+      if (useAutoTheme) {
+        exportConfig.themeVariables = getHAThemeVariables(this);
+      }
+
+      mermaid.initialize(exportConfig);
+      const exportId = `mermaid-export-${++renderCounter}`;
+      const { svg: exportSvg } = await mermaid.render(exportId, resolvedContent);
+
+      // Re-init with original config for future renders
+      const origConfig: Record<string, unknown> = {
+        startOnLoad: false,
+        securityLevel: "loose",
+        theme: useAutoTheme ? "base" : this._config!.theme,
+        fontFamily: "var(--paper-font-common-base_-_font-family, 'Roboto', 'Noto', sans-serif)",
+      };
+      if (useAutoTheme) origConfig.themeVariables = getHAThemeVariables(this);
+      mermaid.initialize(origConfig);
+
+      const processedSvg = this._postProcessSvg(exportSvg);
+      await this._svgToPng(processedSvg, name);
+    } catch {
+      // Fallback: try with original SVG content
+      await this._svgToPng(this._svgContent, name);
+    }
+  }
+
+  private async _svgToPng(svgContent: string, name: string): Promise<void> {
     const parser = new DOMParser();
-    const doc = parser.parseFromString(this._svgContent, "image/svg+xml");
+    const doc = parser.parseFromString(svgContent, "image/svg+xml");
     const svgEl = doc.querySelector("svg");
     if (!svgEl) return;
 
-    // Get natural size or use viewBox
-    let width = parseFloat(svgEl.getAttribute("width") || "800");
-    let height = parseFloat(svgEl.getAttribute("height") || "600");
+    // Ensure xmlns is set
+    svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+    let width = parseFloat(svgEl.getAttribute("width") || "0");
+    let height = parseFloat(svgEl.getAttribute("height") || "0");
     const viewBox = svgEl.getAttribute("viewBox");
-    if (viewBox) {
-      const parts = viewBox.split(/\s+/).map(Number);
+    if ((!width || !height) && viewBox) {
+      const parts = viewBox.split(/[\s,]+/).map(Number);
       if (parts.length === 4) {
-        width = parts[2] || width;
-        height = parts[3] || height;
+        width = parts[2] || 800;
+        height = parts[3] || 600;
       }
     }
+    width = width || 800;
+    height = height || 600;
 
-    // Render at 2x for high quality
+    svgEl.setAttribute("width", String(width));
+    svgEl.setAttribute("height", String(height));
+
     const scale = 2;
     const canvas = document.createElement("canvas");
     canvas.width = width * scale;
     canvas.height = height * scale;
     const ctx = canvas.getContext("2d")!;
 
-    // Fill background
     const bg = getComputedStyle(this).getPropertyValue("--ha-card-background").trim()
       || getComputedStyle(this).getPropertyValue("--card-background-color").trim()
       || "#ffffff";
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(scale, scale);
 
-    // Ensure SVG has explicit dimensions for the image
-    svgEl.setAttribute("width", String(width));
-    svgEl.setAttribute("height", String(height));
     const serialized = new XMLSerializer().serializeToString(svgEl);
     const blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
 
-    const img = new Image();
-    img.onload = () => {
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      canvas.toBlob((pngBlob) => {
-        if (pngBlob) this._triggerDownload(pngBlob, `${name}.png`);
-      }, "image/png");
-    };
-    img.onerror = () => URL.revokeObjectURL(url);
-    img.src = url;
+    return new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob((pngBlob) => {
+          if (pngBlob) this._triggerDownload(pngBlob, `${name}.png`);
+          resolve();
+        }, "image/png");
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve();
+      };
+      img.src = url;
+    });
+  }
+
+  private _prepareSvgForExport(svg: string): string {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svg, "image/svg+xml");
+    const svgEl = doc.querySelector("svg");
+    if (!svgEl) return svg;
+    svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    svgEl.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      new XMLSerializer().serializeToString(svgEl);
   }
 
   private _triggerDownload(blob: Blob, filename: string): void {

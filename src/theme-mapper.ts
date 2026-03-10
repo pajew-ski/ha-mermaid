@@ -80,9 +80,8 @@ function generatePalette(primaryHex: string, count: number): string[] {
  * Determine appropriate text color (light or dark) for a given background.
  * Uses WCAG relative luminance formula.
  */
-function contrastTextColor(bgHex: string): string {
+export function contrastTextColor(bgHex: string): string {
   const [r, g, b] = parseColor(bgHex);
-  // Relative luminance per WCAG 2.0
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.5 ? "#1a1a1a" : "#ffffff";
 }
@@ -90,6 +89,10 @@ function contrastTextColor(bgHex: string): string {
 /**
  * Maps Home Assistant CSS theme variables to Mermaid themeVariables.
  * Reads computed styles from the card element to pick up the active HA theme.
+ *
+ * NOTE: primaryTextColor/secondaryTextColor/tertiaryTextColor are kept as the
+ * HA theme's text colors (for flowcharts, sequence diagrams, etc.). Mindmap
+ * text contrast is handled separately via SVG post-processing.
  */
 export function getHAThemeVariables(
   element: HTMLElement
@@ -106,7 +109,6 @@ export function getHAThemeVariables(
   const primaryBg = get("--primary-background-color", "#fafafa");
   const secondaryBg = get("--secondary-background-color", "#e5e5e5");
   const divider = get("--divider-color", "#e0e0e0");
-  const textPrimary = get("--primary-text-color", "#212121");
   const error = get("--error-color", "#db4437");
   const success = get("--success-color", "#43a047");
   const warning = get("--warning-color", "#ffa600");
@@ -115,23 +117,18 @@ export function getHAThemeVariables(
   // Generate 12 visually distinct pie colors from the primary color
   const pieColors = generatePalette(primary, 12);
 
-  // For mindmap: ensure text contrasts against node backgrounds
-  const primaryContrastText = contrastTextColor(primary);
-  const accentContrastText = contrastTextColor(accent);
-  const secondaryBgContrastText = contrastTextColor(secondaryBg);
-
   return {
     primaryColor: primary,
-    primaryTextColor: primaryContrastText,
+    primaryTextColor: primaryText,
     primaryBorderColor: divider,
     secondaryColor: accent,
-    secondaryTextColor: accentContrastText,
+    secondaryTextColor: secondaryText,
     secondaryBorderColor: divider,
     tertiaryColor: secondaryBg,
-    tertiaryTextColor: secondaryBgContrastText,
+    tertiaryTextColor: primaryText,
     tertiaryBorderColor: divider,
     lineColor: secondaryText,
-    textColor: textPrimary,
+    textColor: primaryText,
     mainBkg: cardBg,
     nodeBkg: primaryBg,
     nodeBorder: primary,
@@ -164,8 +161,8 @@ export function getHAThemeVariables(
     altSectionBkgColor: secondaryBg,
     sectionBkgColor2: primaryBg,
     taskBkgColor: primary,
-    taskTextColor: primaryContrastText,
-    taskTextLightColor: primaryContrastText,
+    taskTextColor: contrastTextColor(primary),
+    taskTextLightColor: contrastTextColor(primary),
     taskBorderColor: primary,
     activeTaskBkgColor: accent,
     activeTaskBorderColor: accent,
