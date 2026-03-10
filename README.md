@@ -59,35 +59,98 @@ content: |
 
 ### Configuration Options
 
-| Option      | Type   | Default | Description                                           |
-| ----------- | ------ | ------- | ----------------------------------------------------- |
-| `content`   | string | **required** | Mermaid diagram code                             |
-| `title`     | string | —       | Card title                                            |
-| `theme`     | string | `auto`  | `auto`, `default`, `dark`, `forest`, or `neutral`     |
-| `card_size` | number | 4       | Card height in the dashboard grid (1-20)              |
+| Option            | Type     | Default      | Description                                        |
+| ----------------- | -------- | ------------ | -------------------------------------------------- |
+| `content`         | string   | **required** | Mermaid diagram code (supports templates)          |
+| `title`           | string   | —            | Card title                                         |
+| `theme`           | string   | `auto`       | `auto`, `default`, `dark`, `forest`, or `neutral`  |
+| `entities`        | string[] | —            | Additional entities to watch (auto-detected from templates) |
+| `update_interval` | number   | —            | Force re-render every N seconds                    |
+| `card_size`       | number   | 4            | Card height in the dashboard grid (1-20)           |
 
-### Entity Templating
+### Live Entity Data
 
-Use live entity values in your diagrams:
+The card **automatically updates** when referenced entities change state. Entity IDs in templates are auto-detected — no extra configuration needed.
+
+#### Basic State Access
 
 ```yaml
 type: custom:mermaid-card
 title: Climate Overview
 content: |
   graph LR
-    T["🌡️ Temperature: ${states['sensor.temperature']}°C"]
-    H["💧 Humidity: ${states['sensor.humidity']}%"]
-    P["📊 Pressure: ${attr('sensor.weather', 'pressure')} hPa"]
+    T["Temperature: ${states['sensor.temperature']}°C"]
+    H["Humidity: ${states['sensor.humidity']}%"]
+    P["Pressure: ${attr('sensor.weather', 'pressure')} hPa"]
     T --> H --> P
 ```
 
-**Template syntax:**
+#### Conditional Logic
 
-| Syntax | Description |
-| ------ | ----------- |
-| `${states['entity_id']}` | Entity state value |
-| `${attr('entity_id', 'attribute')}` | Entity attribute |
-| `${state_attr('entity_id', 'attr')}` | Alias for `attr()` |
+Show different text or icons based on entity state:
+
+```yaml
+type: custom:mermaid-card
+title: System Status
+content: |
+  graph TD
+    Pump["Pump: ${if(is_state('switch.pump', 'on'), 'ON', 'OFF')}"]
+    Temp["Temp: ${if(states['sensor.temp'] > 25, 'HOT', 'OK')}"]
+    Alarm["${if(is_state('alarm_control_panel.home', 'armed_away'), 'ARMED', 'DISARMED')}"]
+    Pump --> Temp --> Alarm
+```
+
+#### Math & Formatting
+
+```yaml
+type: custom:mermaid-card
+title: Conversions
+content: |
+  graph LR
+    C["${round(states['sensor.temp'], 1)}°C"]
+    F["${calc(states['sensor.temp'] * 1.8 + 32)}°F"]
+    Cost["${fixed(states['sensor.energy_daily'], 2)} EUR"]
+    C --> F
+```
+
+#### Relative Timestamps
+
+```yaml
+type: custom:mermaid-card
+content: |
+  graph TD
+    Motion["Last motion: ${timestamp('binary_sensor.motion')}"]
+    Door["Door opened: ${timestamp('binary_sensor.door')}"]
+```
+
+#### Dynamic Pie Chart from Sensors
+
+```yaml
+type: custom:mermaid-card
+title: Current Energy Usage
+content: |
+  pie title Energy Distribution (Watts)
+    "Heating" : ${states['sensor.heating_power']}
+    "Lighting" : ${states['sensor.lighting_power']}
+    "Appliances" : ${states['sensor.appliances_power']}
+```
+
+#### Full Template Reference
+
+| Template | Description | Example Output |
+| -------- | ----------- | -------------- |
+| `${states['entity_id']}` | Entity state | `23.5` |
+| `${attr('entity_id', 'attr')}` | Entity attribute | `°C` |
+| `${state_attr('entity_id', 'attr')}` | Alias for `attr()` | `°C` |
+| `${is_state('entity_id', 'on')}` | State comparison | `true` / `false` |
+| `${if(is_state('e', 'on'), 'A', 'B')}` | Conditional on state | `A` or `B` |
+| `${if(states['e'] > 25, 'A', 'B')}` | Conditional on number | `A` or `B` |
+| `${calc(states['e'] * 1.8 + 32)}` | Math expression | `73.4` |
+| `${round(states['e'], 1)}` | Round to decimals | `23.5` |
+| `${fixed(states['e'], 2)}` | Fixed decimals | `23.50` |
+| `${timestamp('entity_id')}` | Time since last change | `5m ago` |
+
+Supported comparison operators: `>`, `<`, `>=`, `<=`, `==`, `!=`
 
 ### Diagram Examples
 

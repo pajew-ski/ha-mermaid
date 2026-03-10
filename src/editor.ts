@@ -71,6 +71,33 @@ export class MermaidCardEditor extends LitElement {
     this._dispatchChanged();
   }
 
+  private _entitiesChanged(ev: Event): void {
+    const target = ev.target as HTMLInputElement;
+    const value = target.value.trim();
+    if (value) {
+      this._config = {
+        ...this._config!,
+        entities: value.split(",").map((e) => e.trim()).filter(Boolean),
+      };
+    } else {
+      const { entities: _, ...rest } = this._config!;
+      this._config = rest as MermaidCardConfig;
+    }
+    this._dispatchChanged();
+  }
+
+  private _updateIntervalChanged(ev: Event): void {
+    const target = ev.target as HTMLInputElement;
+    const value = parseInt(target.value, 10);
+    if (value && value > 0) {
+      this._config = { ...this._config!, update_interval: value };
+    } else {
+      const { update_interval: _, ...rest } = this._config!;
+      this._config = rest as MermaidCardConfig;
+    }
+    this._dispatchChanged();
+  }
+
   private _handleKeydown(ev: KeyboardEvent): void {
     if (ev.key === "Tab") {
       ev.preventDefault();
@@ -115,10 +142,30 @@ export class MermaidCardEditor extends LitElement {
             autocapitalize="off"
           ></textarea>
           <span class="help-text">
-            Supports all Mermaid diagram types: flowchart, sequence, gantt,
-            class, state, ER, pie, mindmap, timeline, and more.<br />
-            Use <code>\${states['entity_id']}</code> for entity states and
-            <code>\${attr('entity_id', 'attribute')}</code> for attributes.
+            All Mermaid types: flowchart, sequence, gantt, class, state,
+            ER, pie, mindmap, timeline, etc.<br /><br />
+            <b>Live data templates:</b><br />
+            <code>\${states['sensor.temp']}</code> — entity state<br />
+            <code>\${attr('sensor.temp', 'unit')}</code> — attribute<br />
+            <code>\${if(is_state('switch.pump', 'on'), '🟢 ON', '🔴 OFF')}</code> — conditional<br />
+            <code>\${if(states['sensor.temp'] > 25, 'Hot', 'OK')}</code> — comparison<br />
+            <code>\${calc(states['sensor.temp'] * 1.8 + 32)}</code> — math<br />
+            <code>\${round(states['sensor.temp'], 1)}</code> — round<br />
+            <code>\${timestamp('sensor.motion')}</code> — relative time
+          </span>
+        </div>
+
+        <div class="editor-row">
+          <label>Additional Entities (optional)</label>
+          <input
+            type="text"
+            .value=${(this._config.entities || []).join(", ")}
+            @input=${this._entitiesChanged}
+            placeholder="sensor.temp, switch.pump, ..."
+          />
+          <span class="help-text">
+            Entities referenced in templates are auto-detected. Add extra
+            entities here if needed (comma-separated).
           </span>
         </div>
 
@@ -132,8 +179,22 @@ export class MermaidCardEditor extends LitElement {
             <option value="neutral">Mermaid Neutral</option>
           </select>
           <span class="help-text">
-            "Auto" maps your HA theme colors to the diagram. Other options use
-            Mermaid's built-in themes.
+            "Auto" maps your HA theme colors to the diagram.
+          </span>
+        </div>
+
+        <div class="editor-row">
+          <label>Update Interval (seconds, optional)</label>
+          <input
+            type="number"
+            .value=${String(this._config.update_interval || "")}
+            @input=${this._updateIntervalChanged}
+            min="1"
+            placeholder="auto"
+          />
+          <span class="help-text">
+            Force re-render every N seconds. Leave empty for automatic
+            updates on entity state changes only.
           </span>
         </div>
 

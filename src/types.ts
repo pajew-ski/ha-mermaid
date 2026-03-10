@@ -4,6 +4,8 @@ export interface MermaidCardConfig {
   title?: string;
   theme?: "auto" | "default" | "dark" | "forest" | "neutral";
   card_size?: number;
+  entities?: string[];
+  update_interval?: number;
 }
 
 export interface HomeAssistant {
