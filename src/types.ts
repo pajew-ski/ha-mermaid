@@ -4,6 +4,7 @@ export interface MermaidCardConfig {
   title?: string;
   theme?: "auto" | "default" | "dark" | "forest" | "neutral";
   card_size?: number;
+  card_height?: string;
   entities?: string[];
   update_interval?: number;
 }

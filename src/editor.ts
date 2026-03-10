@@ -71,6 +71,20 @@ export class MermaidCardEditor extends LitElement {
     this._dispatchChanged();
   }
 
+  private _cardHeightChanged(ev: Event): void {
+    const target = ev.target as HTMLInputElement;
+    const value = target.value.trim();
+    if (value) {
+      // If user enters just a number, assume px
+      const heightValue = /^\d+$/.test(value) ? `${value}px` : value;
+      this._config = { ...this._config!, card_height: heightValue };
+    } else {
+      const { card_height: _, ...rest } = this._config!;
+      this._config = rest as MermaidCardConfig;
+    }
+    this._dispatchChanged();
+  }
+
   private _entitiesChanged(ev: Event): void {
     const target = ev.target as HTMLInputElement;
     const value = target.value.trim();
@@ -199,6 +213,20 @@ export class MermaidCardEditor extends LitElement {
         </div>
 
         <div class="editor-row">
+          <label>Card Height (optional)</label>
+          <input
+            type="text"
+            .value=${this._config.card_height || ""}
+            @input=${this._cardHeightChanged}
+            placeholder="auto (e.g. 300px, 50vh)"
+          />
+          <span class="help-text">
+            Set a fixed card height (e.g. "300px", "200px", "50vh").
+            The diagram will fit within this height. Leave empty for auto-sizing.
+          </span>
+        </div>
+
+        <div class="editor-row">
           <label>Card Size (optional)</label>
           <input
             type="number"
@@ -209,7 +237,7 @@ export class MermaidCardEditor extends LitElement {
             placeholder="auto"
           />
           <span class="help-text">
-            Override the card height in the dashboard grid (1-20).
+            Override the card height hint for the dashboard grid layout (1-20).
           </span>
         </div>
       </div>

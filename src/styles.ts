@@ -8,6 +8,9 @@ export const cardStyles = css`
   ha-card {
     overflow: hidden;
     padding: 16px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
   }
 
   .card-header {
@@ -22,9 +25,9 @@ export const cardStyles = css`
     display: flex;
     justify-content: center;
     align-items: center;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: auto;
     min-height: 48px;
+    flex: 1;
     cursor: pointer;
     position: relative;
   }
