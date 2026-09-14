@@ -276,15 +276,20 @@ When **Theme** is set to `auto` (default), the card reads your current Home Assi
 
 | HA Variable | Used For |
 | ----------- | -------- |
-| `--primary-color` | Node borders, active elements |
+| `--primary-color` | Node borders, active elements, mindmap root, base hue of generated palettes |
 | `--accent-color` | Secondary elements, highlights |
 | `--primary-text-color` | All text labels |
-| `--ha-card-background` | Diagram backgrounds |
+| `--secondary-text-color` | Lines, arrows, axes |
+| `--ha-card-background` | Diagram background, edge label background |
+| `--primary-background-color` | Node / actor fills |
+| `--secondary-background-color` | Clusters, notes, alternating rows |
 | `--divider-color` | Borders and grid lines |
 | `--error-color` | Critical elements in gantt |
 | `--success-color` | Completed elements |
 
-Dark mode is automatically detected and applied.
+Dark mode is detected from the actual card background (falling back to HA's dark mode flag for transparent cards), so custom themes with dark cards in light mode render correctly.
+
+Section colors for mindmaps, timelines, kanban boards and git graphs are generated from `--primary-color` by hue rotation, with label colors picked per section for contrast. Any remaining label that would end up unreadable on its background (including your own `classDef`/`style` fills) is recolored automatically.
 
 ## Development
 
