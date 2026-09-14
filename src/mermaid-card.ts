@@ -2,12 +2,12 @@ import { LitElement, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import mermaid from "mermaid";
 import type { MermaidCardConfig, HomeAssistant } from "./types";
-import { getHAThemeVariables, contrastTextColor } from "./theme-mapper";
+import { getHATheme, contrastTextColor, contrastRatio } from "./theme-mapper";
 import { renderTemplate, extractReferencedEntities } from "./template-renderer";
 import { cardStyles } from "./styles";
 import "./editor";
 
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.1.1";
 
 /* eslint-disable no-console */
 console.info(
@@ -159,22 +159,7 @@ class MermaidCard extends LitElement {
     this._error = "";
 
     try {
-      const useAutoTheme =
-        !this._config.theme || this._config.theme === "auto";
-
-      const mermaidConfig: Record<string, unknown> = {
-        startOnLoad: false,
-        securityLevel: "loose",
-        theme: useAutoTheme ? "base" : this._config.theme,
-        fontFamily:
-          "var(--paper-font-common-base_-_font-family, 'Roboto', 'Noto', sans-serif)",
-      };
-
-      if (useAutoTheme) {
-        mermaidConfig.themeVariables = getHAThemeVariables(this);
-      }
-
-      mermaid.initialize(mermaidConfig);
+      mermaid.initialize(this._buildMermaidConfig(false));
 
       const id = `mermaid-${++renderCounter}`;
       const { svg } = await mermaid.render(id, resolvedContent);
@@ -194,94 +179,146 @@ class MermaidCard extends LitElement {
   }
 
   /**
-   * Post-process rendered SVG to fix text contrast issues.
-   * Mermaid uses the same themeVariables for different contexts (e.g.
-   * primaryTextColor for both flowchart node text and mindmap node text),
-   * but node backgrounds differ. This finds nodes with poor contrast and fixes them.
+   * Build the Mermaid config for the current card settings.
+   * @param forExport  Use pure-SVG labels and strict security so the result
+   *   can be drawn onto a canvas (PNG export).
    */
-  private _postProcessSvg(svg: string): string {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svg, "image/svg+xml");
-    const svgEl = doc.querySelector("svg");
-    if (!svgEl) return svg;
+  private _buildMermaidConfig(forExport: boolean): Record<string, unknown> {
+    const theme = this._config?.theme;
+    const useAutoTheme = !theme || theme === "auto";
 
-    // Find all groups that look like nodes (contain a shape + text)
-    const groups = svgEl.querySelectorAll("g");
-    for (const g of groups) {
-      // Find background shape (rect, circle, ellipse, polygon, path with fill)
-      // Mindmap nodes use <path> elements for their shapes
-      const shape = g.querySelector<SVGElement>(
-        "rect, circle, ellipse, polygon, path"
-      );
-      if (!shape) continue;
+    const config: Record<string, unknown> = {
+      startOnLoad: false,
+      suppressErrorRendering: true,
+      securityLevel: forExport ? "strict" : "loose",
+      theme: useAutoTheme ? "base" : theme,
+      fontFamily: forExport
+        ? "'Roboto', 'Noto', sans-serif"
+        : "var(--paper-font-common-base_-_font-family, 'Roboto', 'Noto', sans-serif)",
+    };
 
-      const fill = shape.getAttribute("fill") ||
-        shape.style?.fill ||
-        "";
-      if (!fill || fill === "none" || fill === "transparent") continue;
-
-      // Skip tiny path elements (likely arrows/connectors, not node backgrounds)
-      if (shape.tagName === "path") {
-        const d = shape.getAttribute("d") || "";
-        // Very short path data likely means it's a marker/arrow, not a shape
-        if (d.length < 20) continue;
-      }
-
-      // Find text elements in this group
-      const texts = g.querySelectorAll<SVGElement>("text, foreignObject span, foreignObject div, foreignObject p");
-      if (texts.length === 0) continue;
-
-      // Compute ideal text color for this background
-      const idealColor = contrastTextColor(fill);
-
-      for (const text of texts) {
-        // Get current text color
-        const currentFill = text.getAttribute("fill") ||
-          text.style?.color ||
-          text.style?.fill || "";
-
-        if (!currentFill || currentFill === "none") {
-          text.setAttribute("fill", idealColor);
-          text.style.color = idealColor;
-          continue;
-        }
-
-        // Check if current text has poor contrast against background
-        // Parse both colors and check luminance difference
-        try {
-          const ctx = document.createElement("canvas").getContext("2d")!;
-          ctx.fillStyle = fill;
-          const bgResolved = ctx.fillStyle;
-          ctx.fillStyle = currentFill;
-          const fgResolved = ctx.fillStyle;
-
-          if (bgResolved && fgResolved) {
-            const bgLum = this._luminance(bgResolved);
-            const fgLum = this._luminance(fgResolved);
-            const ratio = (Math.max(bgLum, fgLum) + 0.05) /
-              (Math.min(bgLum, fgLum) + 0.05);
-
-            // WCAG AA requires 4.5:1, but we fix anything below 3:1
-            if (ratio < 3) {
-              text.setAttribute("fill", idealColor);
-              text.style.color = idealColor;
-            }
-          }
-        } catch {
-          // Ignore color parsing errors
-        }
-      }
+    if (forExport) {
+      config.htmlLabels = false;
+      config.flowchart = { htmlLabels: false };
+      config.sequence = { htmlLabels: false };
     }
 
-    return new XMLSerializer().serializeToString(svgEl);
+    if (useAutoTheme) {
+      const haTheme = getHATheme(this, this.hass?.themes?.darkMode ?? false);
+      config.themeVariables = haTheme.themeVariables;
+      config.themeCSS = haTheme.themeCSS;
+    }
+
+    return config;
   }
 
-  private _luminance(hexColor: string): number {
-    const hex = hexColor.replace("#", "");
-    const r = parseInt(hex.slice(0, 2), 16) / 255;
-    const g = parseInt(hex.slice(2, 4), 16) / 255;
-    const b = parseInt(hex.slice(4, 6), 16) / 255;
-    return 0.299 * r + 0.587 * g + 0.114 * b;
+  /**
+   * Post-process a rendered SVG to fix text contrast issues.
+   *
+   * Mermaid applies most fills through the embedded stylesheet (e.g. mindmap
+   * sections, user classDef/style directives), so the SVG is mounted into the
+   * card's shadow DOM and inspected with getComputedStyle(). Every text label
+   * is compared against the fill of its nearest enclosing shape; labels that
+   * fall below a 3:1 contrast ratio are recolored with an inline style, which
+   * takes precedence over the stylesheet.
+   */
+  private _postProcessSvg(svg: string): string {
+    const root = this.shadowRoot;
+    if (!root) return svg;
+
+    const host = document.createElement("div");
+    host.setAttribute("aria-hidden", "true");
+    // Rendered at full size (off-screen) so bounding boxes are meaningful.
+    host.style.cssText =
+      "position:fixed;left:-100000px;top:0;width:4000px;height:4000px;" +
+      "overflow:hidden;visibility:hidden;pointer-events:none;";
+    host.innerHTML = svg;
+    root.appendChild(host);
+
+    try {
+      const svgEl = host.querySelector("svg");
+      if (!svgEl) return svg;
+      this._fixLabelContrast(svgEl);
+      return new XMLSerializer().serializeToString(svgEl);
+    } catch {
+      return svg;
+    } finally {
+      host.remove();
+    }
+  }
+
+  private _fixLabelContrast(svgEl: SVGSVGElement): void {
+    const SHAPES = "rect, circle, ellipse, polygon, path";
+    const isVisibleFill = (fill: string): boolean =>
+      !!fill && fill !== "none" && fill !== "transparent" &&
+      !/rgba\([^)]*,\s*0\)$/.test(fill);
+
+    interface Shape { fill: string; box: DOMRect }
+
+    // Collect every group that directly contains a filled, non-empty shape.
+    // Mermaid nests helper rects (e.g. an empty <rect> inside each flowchart
+    // label) that inherit node colors via CSS, so shapes are matched to
+    // labels geometrically rather than by DOM nesting alone.
+    const shapesByGroup = new Map<Element, Shape[]>();
+    for (const g of Array.from(svgEl.querySelectorAll("g"))) {
+      const shapes: Shape[] = [];
+      for (const child of Array.from(g.children)) {
+        if (!child.matches(SHAPES)) continue;
+        const fill = getComputedStyle(child).fill;
+        if (!isVisibleFill(fill)) continue;
+        const box = child.getBoundingClientRect();
+        if (box.width < 2 || box.height < 2) continue;
+        shapes.push({ fill, box });
+      }
+      if (shapes.length) shapesByGroup.set(g, shapes);
+    }
+    if (shapesByGroup.size === 0) return;
+
+    const contains = (box: DOMRect, x: number, y: number): boolean =>
+      x >= box.left - 1 && x <= box.right + 1 &&
+      y >= box.top - 1 && y <= box.bottom + 1;
+
+    // Background of a label: the nearest enclosing shape whose box contains
+    // the label's center (so legend text next to a swatch is left alone).
+    const backgroundFor = (label: Element): string | null => {
+      const box = label.getBoundingClientRect();
+      if (box.width === 0 && box.height === 0) return null;
+      const cx = box.left + box.width / 2;
+      const cy = box.top + box.height / 2;
+      let cur: Element | null = label.parentElement;
+      while (cur && cur !== (svgEl as Element)) {
+        const shapes = shapesByGroup.get(cur);
+        if (shapes) {
+          const hit = shapes.find((s) => contains(s.box, cx, cy));
+          if (hit) return hit.fill;
+        }
+        cur = cur.parentElement;
+      }
+      return null;
+    };
+
+    const labels = svgEl.querySelectorAll<SVGElement | HTMLElement>(
+      "text, foreignObject span, foreignObject div, foreignObject p"
+    );
+    for (const label of labels) {
+      // Skip containers whose text lives in a child element we also visit
+      if (label.querySelector("span, div, p")) continue;
+      if (!label.textContent?.trim()) continue;
+
+      const bg = backgroundFor(label);
+      if (!bg) continue;
+
+      const isSvgText = label instanceof SVGElement;
+      const style = getComputedStyle(label);
+      const fg = isSvgText ? style.fill : style.color;
+
+      const ratio = contrastRatio(bg, fg);
+      if (ratio !== null && ratio >= 3) continue;
+
+      // Inline !important wins over Mermaid's own !important rules (gantt).
+      const ideal = contrastTextColor(bg);
+      label.style.setProperty(isSvgText ? "fill" : "color", ideal, "important");
+    }
   }
 
   // --- Fullscreen & Zoom ---
@@ -430,34 +467,13 @@ class MermaidCard extends LitElement {
     // This ensures the image can be drawn to canvas without CORS/security issues
     try {
       const resolvedContent = renderTemplate(this._config!.content, this.hass);
-      const useAutoTheme = !this._config!.theme || this._config!.theme === "auto";
 
-      const exportConfig: Record<string, unknown> = {
-        startOnLoad: false,
-        securityLevel: "strict",
-        theme: useAutoTheme ? "base" : this._config!.theme,
-        fontFamily: "'Roboto', 'Noto', sans-serif",
-        flowchart: { htmlLabels: false },
-        sequence: { htmlLabels: false },
-      };
-
-      if (useAutoTheme) {
-        exportConfig.themeVariables = getHAThemeVariables(this);
-      }
-
-      mermaid.initialize(exportConfig);
+      mermaid.initialize(this._buildMermaidConfig(true));
       const exportId = `mermaid-export-${++renderCounter}`;
       const { svg: exportSvg } = await mermaid.render(exportId, resolvedContent);
 
       // Re-init with original config for future renders
-      const origConfig: Record<string, unknown> = {
-        startOnLoad: false,
-        securityLevel: "loose",
-        theme: useAutoTheme ? "base" : this._config!.theme,
-        fontFamily: "var(--paper-font-common-base_-_font-family, 'Roboto', 'Noto', sans-serif)",
-      };
-      if (useAutoTheme) origConfig.themeVariables = getHAThemeVariables(this);
-      mermaid.initialize(origConfig);
+      mermaid.initialize(this._buildMermaidConfig(false));
 
       const processedSvg = this._postProcessSvg(exportSvg);
       await this._svgToPng(processedSvg, name);

@@ -1,21 +1,73 @@
 /**
- * Parse any CSS color (hex, rgb, named) into [r, g, b] values.
+ * Parse any CSS color (hex, rgb[a], hsl, named, transparent) into
+ * [r, g, b, a]. Returns null if the color cannot be resolved.
  */
-function parseColor(color: string): [number, number, number] {
-  // Use a temporary element to resolve any CSS color format
-  const ctx = document.createElement("canvas").getContext("2d")!;
+export function parseColor(
+  color: string
+): [number, number, number, number] | null {
+  if (!color) return null;
+  const ctx = document.createElement("canvas").getContext("2d");
+  if (!ctx) return null;
+  ctx.fillStyle = "#000";
   ctx.fillStyle = color;
-  const resolved = ctx.fillStyle; // always returns #rrggbb or #rrggbbaa
+  const resolved = String(ctx.fillStyle);
 
-  if (resolved.startsWith("#")) {
-    const hex = resolved.slice(1);
+  // Opaque colors resolve to #rrggbb
+  if (resolved.startsWith("#") && resolved.length >= 7) {
     return [
-      parseInt(hex.slice(0, 2), 16),
-      parseInt(hex.slice(2, 4), 16),
-      parseInt(hex.slice(4, 6), 16),
+      parseInt(resolved.slice(1, 3), 16),
+      parseInt(resolved.slice(3, 5), 16),
+      parseInt(resolved.slice(5, 7), 16),
+      resolved.length === 9 ? parseInt(resolved.slice(7, 9), 16) / 255 : 1,
     ];
   }
-  return [128, 128, 128]; // fallback gray
+  // Colors with alpha resolve to rgba(r, g, b, a)
+  const m = resolved.match(
+    /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)/
+  );
+  if (m) {
+    return [
+      Math.round(parseFloat(m[1])),
+      Math.round(parseFloat(m[2])),
+      Math.round(parseFloat(m[3])),
+      m[4] !== undefined ? parseFloat(m[4]) : 1,
+    ];
+  }
+  return null;
+}
+
+/**
+ * WCAG relative luminance (0 = black, 1 = white).
+ */
+export function relativeLuminance(color: string): number | null {
+  const rgb = parseColor(color);
+  if (!rgb) return null;
+  const lin = (v: number): number => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+}
+
+/**
+ * WCAG contrast ratio between two colors (1..21). Null if either is unparsable.
+ */
+export function contrastRatio(a: string, b: string): number | null {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  if (la === null || lb === null) return null;
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/**
+ * True if the color is opaque enough to act as a background and is dark.
+ * Returns null when the color is transparent or unparsable.
+ */
+export function isDarkColor(color: string): boolean | null {
+  const rgb = parseColor(color);
+  if (!rgb || rgb[3] < 0.5) return null;
+  const lum = relativeLuminance(color);
+  return lum !== null && lum < 0.35;
 }
 
 /**
@@ -55,21 +107,55 @@ function hslToHex(h: number, s: number, l: number): string {
 }
 
 /**
- * Generate a palette of N distinct colors based on a primary color.
- * Uses golden-angle hue rotation for maximum visual distinction,
- * with alternating lightness for additional contrast.
+ * Normalize any CSS color to #rrggbb. Semi-transparent colors are composited
+ * over `over` (HA uses e.g. `rgba(0,0,0,.12)` for dividers). Falls back to
+ * the given default if the color cannot be parsed.
  */
-function generatePalette(primaryHex: string, count: number): string[] {
-  const [r, g, b] = parseColor(primaryHex);
-  const [h, s, l] = rgbToHsl(r, g, b);
+function toHex(color: string, fallback: string, over?: string): string {
+  const rgb = parseColor(color);
+  if (!rgb) return fallback;
+  let [r, g, b] = rgb;
+  const a = rgb[3];
+  if (a < 1) {
+    const bg = (over && parseColor(over)) || [255, 255, 255, 1];
+    r = Math.round(r * a + bg[0] * (1 - a));
+    g = Math.round(g * a + bg[1] * (1 - a));
+    b = Math.round(b * a + bg[2] * (1 - a));
+  }
+  const h = (v: number) => v.toString(16).padStart(2, "0");
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
+
+interface PaletteOptions {
+  /** Lightness range the generated colors are clamped to (0-1). */
+  minL: number;
+  maxL: number;
+  /** Alternate lightness between even/odd slots by this amount. */
+  alternate?: number;
+}
+
+/**
+ * Generate a palette of N distinct colors based on a primary color.
+ * Uses golden-angle hue rotation for maximum visual distinction.
+ */
+function generatePalette(
+  primaryHex: string,
+  count: number,
+  opts: PaletteOptions
+): string[] {
+  const rgb = parseColor(primaryHex) ?? [3, 169, 244, 1];
+  const [h, s, l] = rgbToHsl(rgb[0], rgb[1], rgb[2]);
   const colors: string[] = [];
   const goldenAngle = 137.508; // degrees — maximizes hue spread
+  const alt = opts.alternate ?? 0;
 
   for (let i = 0; i < count; i++) {
     const hue = h + i * goldenAngle;
-    // Alternate lightness: even slots slightly lighter, odd slots slightly darker
-    const lightness = Math.max(0.25, Math.min(0.65, l + (i % 2 === 0 ? 0 : -0.1)));
-    // Keep saturation vibrant
+    const lightness = Math.max(
+      opts.minL,
+      Math.min(opts.maxL, l + (i % 2 === 0 ? 0 : -alt))
+    );
+    // Keep saturation vibrant even for gray-ish primaries
     const saturation = Math.max(0.4, Math.min(0.85, s));
     colors.push(hslToHex(hue, saturation, lightness));
   }
@@ -77,47 +163,123 @@ function generatePalette(primaryHex: string, count: number): string[] {
 }
 
 /**
- * Determine appropriate text color (light or dark) for a given background.
- * Uses WCAG relative luminance formula.
+ * Determine the text color (light or dark) with the best WCAG contrast
+ * against the given background.
  */
-export function contrastTextColor(bgHex: string): string {
-  const [r, g, b] = parseColor(bgHex);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5 ? "#1a1a1a" : "#ffffff";
+export function contrastTextColor(bg: string): string {
+  const light = "#ffffff";
+  const dark = "#1a1a1a";
+  const toLight = contrastRatio(bg, light);
+  const toDark = contrastRatio(bg, dark);
+  if (toLight === null || toDark === null) return dark;
+  return toLight >= toDark ? light : dark;
 }
 
 /**
- * Maps Home Assistant CSS theme variables to Mermaid themeVariables.
+ * Pick the light or dark text color that stays most readable across all
+ * given backgrounds (maximizes the worst-case contrast).
+ */
+function bestTextColorFor(backgrounds: string[]): string {
+  const worst = (fg: string): number =>
+    Math.min(...backgrounds.map((bg) => contrastRatio(bg, fg) ?? 0));
+  return worst("#ffffff") >= worst("#1a1a1a") ? "#ffffff" : "#1a1a1a";
+}
+
+export interface HAMermaidTheme {
+  /** Mermaid `themeVariables` for the `base` theme. */
+  themeVariables: Record<string, string | boolean>;
+  /** Extra CSS injected via Mermaid's `themeCSS` option. */
+  themeCSS: string;
+  /** Whether the card renders on a dark background. */
+  darkMode: boolean;
+}
+
+/**
+ * Maps Home Assistant CSS theme variables to a Mermaid theme.
  * Reads computed styles from the card element to pick up the active HA theme.
  *
- * NOTE: primaryTextColor/secondaryTextColor/tertiaryTextColor are kept as the
- * HA theme's text colors (for flowcharts, sequence diagrams, etc.). Mindmap
- * text contrast is handled separately via SVG post-processing.
+ * @param element  The card element (for getComputedStyle).
+ * @param darkModeHint  HA's `hass.themes.darkMode`; used when the card
+ *   background is transparent or cannot be parsed.
  */
-export function getHAThemeVariables(
-  element: HTMLElement
-): Record<string, string> {
+export function getHATheme(
+  element: HTMLElement,
+  darkModeHint = false
+): HAMermaidTheme {
   const cs = getComputedStyle(element);
   const get = (prop: string, fallback: string): string =>
     cs.getPropertyValue(prop).trim() || fallback;
 
-  const primary = get("--primary-color", "#03a9f4");
-  const primaryText = get("--primary-text-color", "#212121");
-  const secondaryText = get("--secondary-text-color", "#727272");
-  const accent = get("--accent-color", "#ff9800");
-  const cardBg = get("--ha-card-background", get("--card-background-color", "#ffffff"));
-  const primaryBg = get("--primary-background-color", "#fafafa");
-  const secondaryBg = get("--secondary-background-color", "#e5e5e5");
-  const divider = get("--divider-color", "#e0e0e0");
-  const error = get("--error-color", "#db4437");
-  const success = get("--success-color", "#43a047");
-  const warning = get("--warning-color", "#ffa600");
-  const info = get("--info-color", "#039be5");
+  const rawCardBg = get("--ha-card-background", get("--card-background-color", ""));
+  const rawPrimaryBg = get("--primary-background-color", "");
 
-  // Generate 12 visually distinct pie colors from the primary color
-  const pieColors = generatePalette(primary, 12);
+  // Decide dark mode from the actual surface the diagram sits on. Cards with
+  // a (semi-)transparent background fall back to the page background, then
+  // to HA's own darkMode flag.
+  let darkMode = isDarkColor(rawCardBg);
+  let surface = rawCardBg;
+  if (darkMode === null) {
+    darkMode = isDarkColor(rawPrimaryBg);
+    surface = rawPrimaryBg;
+  }
+  if (darkMode === null) {
+    darkMode = darkModeHint;
+    surface = darkMode ? "#1c1c1c" : "#ffffff";
+  }
 
-  return {
+  const cardBg = toHex(surface, darkMode ? "#1c1c1c" : "#ffffff");
+  const primaryBg = toHex(rawPrimaryBg, darkMode ? "#111111" : "#fafafa", cardBg);
+  const secondaryBg = toHex(
+    get("--secondary-background-color", ""),
+    darkMode ? "#202020" : "#e5e5e5",
+    cardBg
+  );
+  const primary = toHex(get("--primary-color", ""), "#03a9f4", cardBg);
+  const accent = toHex(get("--accent-color", ""), "#ff9800", cardBg);
+  const divider = toHex(get("--divider-color", ""), darkMode ? "#373737" : "#e0e0e0", cardBg);
+  const error = toHex(get("--error-color", ""), "#db4437", cardBg);
+  const success = toHex(get("--success-color", ""), "#43a047", cardBg);
+  const warning = toHex(get("--warning-color", ""), "#ffa600", cardBg);
+
+  // Text colors: take HA's, but never accept one that is unreadable on the
+  // surface the diagram is drawn on (misconfigured or transparent themes).
+  const fallbackText = darkMode ? "#e1e1e1" : "#212121";
+  const fallbackSecondary = darkMode ? "#9b9b9b" : "#727272";
+  let primaryText = toHex(get("--primary-text-color", ""), fallbackText, cardBg);
+  let secondaryText = toHex(get("--secondary-text-color", ""), fallbackSecondary, cardBg);
+  if ((contrastRatio(primaryText, cardBg) ?? 0) < 3) primaryText = fallbackText;
+  if ((contrastRatio(secondaryText, cardBg) ?? 0) < 2) secondaryText = fallbackSecondary;
+
+  // Node surfaces: a subtle step away from the card background so that
+  // shapes remain visible without relying on borders alone.
+  const nodeBg = primaryBg !== cardBg ? primaryBg : secondaryBg;
+
+  // Pie: 12 distinct colors derived from the primary hue
+  const pieColors = generatePalette(primary, 12, {
+    minL: 0.3,
+    maxL: 0.6,
+    alternate: 0.1,
+  });
+
+  // Section colors (mindmap, timeline, kanban): 12 distinct, medium-lightness
+  // fills so both light and dark text variants stay readable. Mermaid's base
+  // theme would otherwise derive these from primaryColor and darken them by
+  // 25 % — which turns typical HA primaries (e.g. teal) nearly black.
+  const sectionColors = generatePalette(primary, 12, {
+    minL: darkMode ? 0.42 : 0.38,
+    maxL: darkMode ? 0.6 : 0.55,
+  });
+  // Section 0 of the scale is only ever used for the root node, and there it
+  // is overridden by git0 — so keep the theme's primary color for the root.
+  sectionColors[0] = primary;
+  const sectionLabels = sectionColors.map(contrastTextColor);
+
+  // Gantt draws done/active/critical task labels in one shared color.
+  const statusText = bestTextColorFor([success, accent, error]);
+
+  const vars: Record<string, string | boolean> = {
+    darkMode,
+
     primaryColor: primary,
     primaryTextColor: primaryText,
     primaryBorderColor: divider,
@@ -128,41 +290,48 @@ export function getHAThemeVariables(
     tertiaryTextColor: primaryText,
     tertiaryBorderColor: divider,
     lineColor: secondaryText,
+    arrowheadColor: secondaryText,
     textColor: primaryText,
-    mainBkg: cardBg,
-    nodeBkg: primaryBg,
+    mainBkg: nodeBg,
+    nodeBkg: nodeBg,
     nodeBorder: primary,
+    nodeTextColor: primaryText,
     clusterBkg: secondaryBg,
     clusterBorder: divider,
     titleColor: primaryText,
     edgeLabelBackground: cardBg,
     background: cardBg,
+    rowOdd: cardBg,
+    rowEven: secondaryBg,
 
     // Sequence diagram
-    actorBkg: primaryBg,
+    actorBkg: nodeBg,
     actorBorder: primary,
     actorTextColor: primaryText,
     actorLineColor: secondaryText,
     signalColor: primaryText,
     signalTextColor: primaryText,
-    labelBoxBkgColor: primaryBg,
+    labelBoxBkgColor: nodeBg,
     labelBoxBorderColor: divider,
     labelTextColor: primaryText,
     loopTextColor: primaryText,
     noteBkgColor: secondaryBg,
     noteBorderColor: divider,
     noteTextColor: primaryText,
-    activationBkgColor: primaryBg,
+    activationBkgColor: nodeBg,
     activationBorderColor: primary,
     sequenceNumberColor: cardBg,
 
     // Gantt
-    sectionBkgColor: primaryBg,
+    sectionBkgColor: nodeBg,
     altSectionBkgColor: secondaryBg,
-    sectionBkgColor2: primaryBg,
+    sectionBkgColor2: nodeBg,
+    excludeBkgColor: secondaryBg,
     taskBkgColor: primary,
     taskTextColor: contrastTextColor(primary),
     taskTextLightColor: contrastTextColor(primary),
+    taskTextDarkColor: statusText,
+    taskTextOutsideColor: primaryText,
     taskBorderColor: primary,
     activeTaskBkgColor: accent,
     activeTaskBorderColor: accent,
@@ -176,20 +345,12 @@ export function getHAThemeVariables(
     // State diagram
     labelColor: primaryText,
     altBackground: secondaryBg,
+    stateBkg: nodeBg,
+    stateLabelColor: primaryText,
+    compositeBackground: secondaryBg,
+    compositeTitleBackground: secondaryBg,
 
-    // Pie — 12 distinct colors derived from primary via hue rotation
-    pie1: pieColors[0],
-    pie2: pieColors[1],
-    pie3: pieColors[2],
-    pie4: pieColors[3],
-    pie5: pieColors[4],
-    pie6: pieColors[5],
-    pie7: pieColors[6],
-    pie8: pieColors[7],
-    pie9: pieColors[8],
-    pie10: pieColors[9],
-    pie11: pieColors[10],
-    pie12: pieColors[11],
+    // Pie
     pieTitleTextSize: "16px",
     pieTitleTextColor: primaryText,
     pieSectionTextSize: "14px",
@@ -202,8 +363,10 @@ export function getHAThemeVariables(
     pieOuterStrokeColor: divider,
     pieOpacity: "1",
 
-    // Class diagram
+    // Class / ER diagram
     classText: primaryText,
+    attributeBackgroundColorOdd: cardBg,
+    attributeBackgroundColorEven: secondaryBg,
 
     // Fonts
     fontFamily: get("--ha-card-header-font-family",
@@ -211,11 +374,44 @@ export function getHAThemeVariables(
         "'Roboto', 'Noto', sans-serif")),
     fontSize: "14px",
   };
-}
 
-/**
- * Determines the best Mermaid base theme given HA dark mode state.
- */
-export function getMermaidBaseTheme(darkMode: boolean): "dark" | "default" {
-  return darkMode ? "dark" : "default";
+  for (let i = 0; i < 12; i++) {
+    vars[`pie${i + 1}`] = pieColors[i];
+    vars[`cScale${i}`] = sectionColors[i];
+    vars[`cScaleLabel${i}`] = sectionLabels[i];
+    vars[`cScaleInv${i}`] = sectionLabels[i];
+  }
+  // Git graph / mindmap root: git0 is the root node fill.
+  for (let i = 0; i < 8; i++) {
+    vars[`git${i}`] = sectionColors[i];
+    vars[`gitInv${i}`] = sectionLabels[i];
+    vars[`gitBranchLabel${i}`] = sectionLabels[i];
+  }
+
+  // Mermaid colors <text> per section but leaves HTML labels (<span>) on the
+  // generic text color, and maps `.section-2 span` to the root label color.
+  // Inject explicit per-section label colors for both label flavours.
+  const css: string[] = [];
+  css.push(
+    `.section-root text, .section--1 text { fill: ${sectionLabels[0]}; }`,
+    `.section-root span, .section-root div, .section-root .nodeLabel,` +
+      ` .section--1 span, .section--1 div, .section--1 .nodeLabel` +
+      ` { color: ${sectionLabels[0]}; }`
+  );
+  for (let i = 0; i < 11; i++) {
+    const label = sectionLabels[i + 1];
+    css.push(
+      `.section-${i} text { fill: ${label}; }`,
+      `.section-${i} span, .section-${i} div, .section-${i} .nodeLabel { color: ${label}; }`
+    );
+  }
+
+  // Timeline: the axis takes the last section's label color and the arrow
+  // head / task lines are hard-coded black or gray in Mermaid.
+  css.push(
+    `.lineWrapper line, .task-line { stroke: ${secondaryText}; }`,
+    `marker#arrowhead path { fill: ${secondaryText}; }`
+  );
+
+  return { themeVariables: vars, themeCSS: css.join("\n"), darkMode };
 }
