@@ -1,6 +1,6 @@
 # Mermaid Diagram Card for Home Assistant
 
-[![HACS Badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/hacs/integration)
+[![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/v/release/pajew-ski/ha-mermaid?style=for-the-badge)](https://github.com/pajew-ski/ha-mermaid/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
@@ -21,22 +21,12 @@ A custom Lovelace card that renders **Mermaid diagrams** natively in Home Assist
 
 ### HACS (Recommended)
 
-Click the button above, or:
+The card is not in the HACS default store yet, so add it as a custom repository. Click the button above, or:
 
-1. Open **HACS** in your Home Assistant instance
-2. Search for **Mermaid Diagram Card**
-3. Click **Download**
+1. Open **HACS** → three dots menu → **Custom repositories**
+2. Add `https://github.com/pajew-ski/ha-mermaid` with type **Dashboard** (called **Plugin** in HACS versions before 2.0). Do not choose **Integration**: HACS will reject the repository as "not compliant".
+3. Search for **Mermaid Diagram Card** in HACS and click **Download**
 4. Refresh your browser (Ctrl+F5)
-
-<details>
-<summary>Manual HACS install (if not in default store yet)</summary>
-
-1. Open HACS → three dots menu → **Custom repositories**
-2. Add `https://github.com/pajew-ski/ha-mermaid` with category **Plugin**
-3. Click **Download**
-4. Refresh your browser
-
-</details>
 
 ### Manual
 
