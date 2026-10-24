@@ -294,11 +294,13 @@ Copy `dist/ha-mermaid.js` to your HA `config/www/` directory and add it as a res
 
 ### Publishing a Release
 
-1. Update version in `package.json` and `src/mermaid-card.ts`
-2. `npm run build`
+The version lives only in `package.json`; the card reads it at build time.
+
+1. `npm version X.Y.Z --no-git-tag-version` (updates `package.json` and `package-lock.json`)
+2. `npm run build && npm test` (`npm test` fails if the bundle does not carry the new version)
 3. Commit and push
 4. Create a GitHub Release with tag `vX.Y.Z`
-5. The GitHub Action automatically attaches `ha-mermaid.js` to the release
+5. The GitHub Action checks that the tag equals `v` + the `package.json` version, then attaches `ha-mermaid.js` to the release
 
 ### HACS Store Checklist
 

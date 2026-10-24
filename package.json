@@ -1,12 +1,13 @@
 {
   "name": "ha-mermaid",
-  "version": "1.0.0",
+  "version": "0.7.1",
   "description": "Home Assistant custom card for rendering Mermaid diagrams with full theme integration",
   "main": "dist/ha-mermaid.js",
   "scripts": {
     "build": "rollup -c",
     "dev": "rollup -c --watch",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test": "node scripts/check-version.mjs"
   },
   "repository": {
     "type": "git",

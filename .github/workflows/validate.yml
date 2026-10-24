@@ -40,6 +40,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+      - run: npm test
 
       - name: Verify dist output exists
         run: test -f dist/ha-mermaid.js

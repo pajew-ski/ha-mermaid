@@ -29,6 +29,7 @@ npm install          # Install dependencies
 npm run build        # Production build
 npm run dev          # Watch mode for development
 npm run lint         # ESLint check
+npm test             # Version consistency check (package.json, lockfile, dist, release tag)
 ```
 
 ## Key Design Decisions
@@ -41,6 +42,11 @@ npm run lint         # ESLint check
 ## Testing
 - Manual testing in Home Assistant dev environment
 - Load card via Resources > JavaScript Module > `/local/ha-mermaid.js`
+
+## Versioning
+- `package.json` is the only place the version is written. `src/mermaid-card.ts` imports it; never hardcode a version string in `src/`.
+- Bump with `npm version X.Y.Z --no-git-tag-version`, rebuild, run `npm test`, then release with tag `vX.Y.Z`.
+- The release workflow refuses to attach the asset when the tag and `package.json` disagree.
 
 ## HACS Requirements
 - `hacs.json` in repo root with render_readme: true

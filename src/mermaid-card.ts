@@ -6,8 +6,7 @@ import { getHATheme, contrastTextColor, contrastRatio } from "./theme-mapper";
 import { renderTemplate, extractReferencedEntities } from "./template-renderer";
 import { cardStyles } from "./styles";
 import "./editor";
-
-const CARD_VERSION = "1.1.1";
+import { version as CARD_VERSION } from "../package.json";
 
 /* eslint-disable no-console */
 console.info(
