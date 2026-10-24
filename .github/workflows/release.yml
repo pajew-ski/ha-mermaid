@@ -20,6 +20,11 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      - name: Verify tag matches package.json and bundle version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: node scripts/check-version.mjs "$TAG"
+
       - name: Verify build output
         run: ls -la dist/ha-mermaid.js
 
