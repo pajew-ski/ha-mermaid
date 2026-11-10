@@ -98,6 +98,19 @@ export class MermaidCardEditor extends LitElement {
     this._dispatchChanged();
   }
 
+  private _actionsChanged(ev: CustomEvent<{ value: unknown; isValid?: boolean }>): void {
+    ev.stopPropagation();
+    const { value, isValid } = ev.detail;
+    if (isValid === false) return;
+    if (value && typeof value === "object" && Object.keys(value).length) {
+      this._config = { ...this._config!, actions: value as MermaidCardConfig["actions"] };
+    } else {
+      const { actions: _, ...rest } = this._config!;
+      this._config = rest as MermaidCardConfig;
+    }
+    this._dispatchChanged();
+  }
+
   private _handleKeydown(ev: KeyboardEvent): void {
     if (ev.key === "Tab") {
       ev.preventDefault();
@@ -151,6 +164,7 @@ export class MermaidCardEditor extends LitElement {
             <code>\${if(states['sensor.temp'] > 25, 'Hot', 'OK')}</code> — comparison<br />
             <code>\${calc(states['sensor.temp'] * 1.8 + 32)}</code> — math<br />
             <code>\${round(states['sensor.temp'], 1)}</code> — round<br />
+            <code>\${clamp(states['sensor.temp'], 0, 40)}</code> — limit to a range<br />
             <code>\${timestamp('sensor.motion')}</code> — relative time
           </span>
         </div>
@@ -166,6 +180,20 @@ export class MermaidCardEditor extends LitElement {
           <span class="help-text">
             Entities referenced in templates are auto-detected. Add extra
             entities here if needed (comma-separated).
+          </span>
+        </div>
+
+        <div class="editor-row">
+          <label>Node Actions (YAML, optional)</label>
+          <ha-yaml-editor
+            .hass=${this.hass}
+            .defaultValue=${this._config.actions || {}}
+            @value-changed=${this._actionsChanged}
+          ></ha-yaml-editor>
+          <span class="help-text">
+            Map node or subgraph IDs to actions, e.g.<br />
+            <code>Pump: { action: toggle, entity: switch.pump }</code><br />
+            Supports toggle, more-info, navigate, url and perform-action.
           </span>
         </div>
 

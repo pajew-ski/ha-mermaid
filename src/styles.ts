@@ -7,6 +7,7 @@ export const cardStyles = css`
   }
 
   ha-card {
+    position: relative;
     overflow: hidden;
     padding: 16px;
     box-sizing: border-box;
@@ -195,6 +196,97 @@ export const cardStyles = css`
     font-size: 13px;
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  .mermaid-source-label {
+    margin-top: 12px;
+    color: var(--secondary-text-color, #727272);
+  }
+
+  .mermaid-source {
+    margin: 4px 0 0;
+    padding: 8px;
+    max-height: 240px;
+    overflow: auto;
+    color: var(--primary-text-color, #212121);
+    background: var(--ha-card-background, var(--card-background-color, #fff));
+    border-radius: 4px;
+    white-space: pre;
+  }
+
+  /* Last good diagram kept after a failed update */
+  .render-warning {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    max-width: calc(100% - 16px);
+    z-index: 1;
+    font-size: 12px;
+    color: var(--secondary-text-color, #727272);
+  }
+
+  .render-warning summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    justify-content: flex-end;
+    opacity: 0.7;
+  }
+
+  .render-warning summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .render-warning summary svg {
+    width: 18px;
+    height: 18px;
+    fill: var(--warning-color, #ffa600);
+  }
+
+  .render-warning[open] summary,
+  .render-warning summary:hover {
+    opacity: 1;
+  }
+
+  .render-warning-body {
+    margin-top: 4px;
+    padding: 8px 10px;
+    background: var(--secondary-background-color, #fafafa);
+    border: 1px solid var(--divider-color, #e0e0e0);
+    border-radius: 8px;
+    color: var(--primary-text-color, #212121);
+    word-break: break-word;
+  }
+
+  .render-warning-body code {
+    display: block;
+    margin: 4px 0;
+    color: var(--error-color, #db4437);
+    white-space: pre-wrap;
+  }
+
+  .render-warning-body ul {
+    margin: 4px 0 0;
+    padding-left: 18px;
+  }
+
+  /* Nodes with a configured action */
+  .mermaid-container [data-node-action] {
+    cursor: pointer;
+  }
+
+  .mermaid-container [data-node-action]:focus {
+    outline: none;
+  }
+
+  .mermaid-container [data-node-action]:focus-visible {
+    outline: 2px solid var(--primary-color, #03a9f4);
+    outline-offset: 2px;
+  }
+
+  .mermaid-container [data-node-action]:focus-visible > :is(rect, circle, ellipse, polygon, path) {
+    stroke: var(--primary-color, #03a9f4) !important;
+    stroke-width: 3px !important;
   }
 
   .mermaid-loading {
