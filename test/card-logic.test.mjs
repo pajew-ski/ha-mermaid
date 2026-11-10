@@ -39,6 +39,7 @@ test("node IDs are recovered from Mermaid DOM ids", () => {
   assert.equal(nodeIdOf("state-Idle-2"), "Idle");
   assert.equal(nodeIdOf("classId-Animal-0"), "Animal");
   assert.equal(nodeIdOf("Kitchen"), "Kitchen");
+  assert.equal(nodeIdOf("mermaid-4-Kitchen"), "Kitchen"); // Mermaid 12 cluster
   assert.equal(nodeIdOf("whatever", "Garage"), "Garage");
 });
 

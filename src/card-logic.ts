@@ -37,13 +37,16 @@ export function describeRenderError(
 export const ACTION_ATTR = "data-node-action";
 
 // Mermaid DOM ids look like flowchart-<id>-<n>, state-<id>-<n>, classId-<id>-<n>, entity-<id>-<n>;
-// subgraph clusters use the bare id.
+// subgraph clusters use the bare id. Mermaid 12 prefixes every id with the render id
+// (mermaid-<n>- from mermaid-card.ts), clusters included.
+const RENDER_ID = /^mermaid-\d+-/;
 const DOM_ID = /^(?:.*?-)?(?:flowchart|state|classId|entity)-(.+)-\d+$/;
 
 /** The diagram's own node ID for a rendered element. */
 export function nodeIdOf(domId: string, dataId?: string | null): string {
   if (dataId) return dataId;
-  return DOM_ID.exec(domId)?.[1] ?? domId;
+  const id = domId.replace(RENDER_ID, "");
+  return DOM_ID.exec(id)?.[1] ?? id;
 }
 
 /**
