@@ -1,6 +1,6 @@
 {
   "name": "ha-mermaid",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Home Assistant custom card for rendering Mermaid diagrams with full theme integration",
   "main": "dist/ha-mermaid.js",
   "type": "module",
