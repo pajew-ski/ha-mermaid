@@ -18,7 +18,10 @@ src/
   types.ts             - TypeScript interfaces
   styles.ts            - CSS styles with HA theme variables
   theme-mapper.ts      - Maps HA CSS variables to Mermaid theme config
-  template-renderer.ts - Renders Jinja-like templates using entity states
+  template-renderer.ts - Template expression parser (allowlist) and value masking
+  card-logic.ts        - Pure card helpers (render-error fallback, node actions), unit-tested
+test/
+  *.test.mjs           - node:test suites, import the .ts sources directly (Node type stripping)
 dist/
   ha-mermaid.js        - Built bundle (committed for HACS)
 ```
@@ -29,7 +32,7 @@ npm install          # Install dependencies
 npm run build        # Production build
 npm run dev          # Watch mode for development
 npm run lint         # ESLint check
-npm test             # Version consistency check (package.json, lockfile, dist, release tag)
+npm test             # Version consistency check, then unit tests in test/ (Node >= 22.18)
 ```
 
 ## Key Design Decisions
@@ -40,6 +43,8 @@ npm test             # Version consistency check (package.json, lockfile, dist, 
 5. **Card editor**: LitElement-based editor with textarea for diagram code + dropdowns for options
 
 ## Testing
+- `npm test` runs `test/*.test.mjs` with `node:test`; modules under test must only use `import type` so Node can load them without a build
+- Template regression cases in `test/template-renderer.test.mjs` pin the output of every README example; keep them green
 - Manual testing in Home Assistant dev environment
 - Load card via Resources > JavaScript Module > `/local/ha-mermaid.js`
 

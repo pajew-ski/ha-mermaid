@@ -5,6 +5,14 @@ import type { MermaidCardConfig, HomeAssistant } from "./types";
 import { getHATheme, contrastTextColor, contrastRatio } from "./theme-mapper";
 import { renderTemplate, extractReferencedEntities } from "./template-renderer";
 import { cardStyles } from "./styles";
+import {
+  ACTION_ATTR,
+  actionEventDetail,
+  describeRenderError,
+  entitySnapshot,
+  markActionNodes,
+  type RenderError,
+} from "./card-logic";
 import "./editor";
 import { version as CARD_VERSION } from "../package.json";
 
@@ -21,12 +29,14 @@ class MermaidCard extends LitElement {
   @property({ attribute: false }) hass?: HomeAssistant;
   @state() private _config?: MermaidCardConfig;
   @state() private _svgContent = "";
-  @state() private _error = "";
+  @state() private _renderError: RenderError | null = null;
   @state() private _loading = true;
   @state() private _fullscreen = false;
   @state() private _zoom = 1;
 
   private _lastRenderedContent = "";
+  /** Watched entity states at the last successful render. */
+  private _goodSnapshot: Record<string, string> | null = null;
   private _lastDarkMode: boolean | null = null;
   private _watchedEntities: string[] = [];
   private _lastEntityStates: Record<string, string> = {};
@@ -69,8 +79,11 @@ class MermaidCard extends LitElement {
     const explicit = config.entities || [];
     this._watchedEntities = [...new Set([...autoDetected, ...explicit])];
 
-    // Force re-render
+    // Force re-render; a new config has no earlier diagram to fall back to
     this._lastRenderedContent = "";
+    this._svgContent = "";
+    this._goodSnapshot = null;
+    this._renderError = null;
     this._lastEntityStates = {};
 
     // Set up interval-based updates if configured
@@ -141,7 +154,7 @@ class MermaidCard extends LitElement {
   private async _renderDiagram(): Promise<void> {
     if (!this._config || !this.shadowRoot) return;
 
-    const resolvedContent = renderTemplate(this._config.content, this.hass);
+    const resolvedContent = this._resolveContent();
     const darkMode = this.hass?.themes?.darkMode ?? false;
 
     // Skip if resolved output unchanged
@@ -155,7 +168,7 @@ class MermaidCard extends LitElement {
     this._lastRenderedContent = resolvedContent;
     this._lastDarkMode = darkMode;
     this._loading = true;
-    this._error = "";
+    const snapshot = entitySnapshot(this.hass?.states, this._watchedEntities);
 
     try {
       mermaid.initialize(this._buildMermaidConfig(false));
@@ -164,17 +177,64 @@ class MermaidCard extends LitElement {
       const { svg } = await mermaid.render(id, resolvedContent);
 
       this._svgContent = this._postProcessSvg(svg);
+      this._goodSnapshot = snapshot;
+      this._renderError = null;
       this._loading = false;
     } catch (err) {
       this._loading = false;
       const message = err instanceof Error ? err.message : String(err);
-      this._error =
+      const cleaned =
         message
           .replace(/Syntax error in.*\n?/g, "")
           .replace(/Parse error on line.*\n?/g, "")
           .trim() || "Failed to render diagram. Check your Mermaid syntax.";
-      this._svgContent = "";
+      // Keep the last good SVG (if any) and say what changed since it rendered.
+      this._renderError = describeRenderError(
+        cleaned,
+        this._svgContent ? this._goodSnapshot : null,
+        snapshot,
+        resolvedContent
+      );
     }
+  }
+
+  private _resolveContent(): string {
+    return renderTemplate(this._config!.content, this.hass, {
+      numericFallback: this._config!.numeric_fallback,
+    });
+  }
+
+  // --- Node actions ---
+
+  private _actionKeyFor(e: Event): string | null {
+    const el = (e.target as Element | null)?.closest?.(`[${ACTION_ATTR}]`);
+    return el?.getAttribute(ACTION_ATTR) ?? null;
+  }
+
+  private _fireAction(key: string): void {
+    const action = this._config?.actions?.[key];
+    if (!action) return;
+    this.dispatchEvent(
+      new CustomEvent("hass-action", {
+        bubbles: true,
+        composed: true,
+        detail: actionEventDetail(action),
+      })
+    );
+  }
+
+  private _onDiagramClick(e: MouseEvent): void {
+    const key = this._actionKeyFor(e);
+    if (key === null) this._openFullscreen();
+    else this._fireAction(key);
+  }
+
+  private _onDiagramKeydown(e: KeyboardEvent): void {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const key = this._actionKeyFor(e);
+    if (key === null) return;
+    e.preventDefault();
+    this._fireAction(key);
   }
 
   /**
@@ -238,6 +298,7 @@ class MermaidCard extends LitElement {
       const svgEl = host.querySelector("svg");
       if (!svgEl) return svg;
       this._fixLabelContrast(svgEl);
+      markActionNodes(svgEl, this._config?.actions);
       return new XMLSerializer().serializeToString(svgEl);
     } catch {
       return svg;
@@ -465,7 +526,7 @@ class MermaidCard extends LitElement {
     // Re-render with htmlLabels disabled to get pure SVG (no foreignObject)
     // This ensures the image can be drawn to canvas without CORS/security issues
     try {
-      const resolvedContent = renderTemplate(this._config!.content, this.hass);
+      const resolvedContent = this._resolveContent();
 
       mermaid.initialize(this._buildMermaidConfig(true));
       const exportId = `mermaid-export-${++renderCounter}`;
@@ -591,24 +652,53 @@ class MermaidCard extends LitElement {
 
   // --- Render ---
 
+  /** Unobtrusive corner notice: the shown diagram is the last one that rendered. */
+  private _renderWarning(err: RenderError) {
+    return html`
+      <details class="render-warning">
+        <summary
+          aria-label="Diagram update failed"
+          title="Diagram update failed, showing the last working version"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
+          </svg>
+        </summary>
+        <div class="render-warning-body">
+          <div>Showing the last working diagram. The update failed:</div>
+          <code>${err.message}</code>
+          ${err.changed.length
+            ? html`<div>Changed since it last rendered:</div>
+                <ul>${err.changed.map((id) => html`<li>${id}</li>`)}</ul>`
+            : nothing}
+        </div>
+      </details>
+    `;
+  }
+
   protected render() {
     if (!this._config) return nothing;
+    const err = this._renderError;
 
     return html`
       <ha-card>
         ${this._config.title
           ? html`<div class="card-header">${this._config.title}</div>`
           : nothing}
-        ${this._loading
-          ? html`<div class="mermaid-loading">Rendering diagram…</div>`
-          : this._error
-            ? html`<div class="mermaid-error">${this._error}</div>`
-            : this._svgContent
-              ? html`<div
-                  class="mermaid-container"
-                  @click=${this._openFullscreen}
-                  .innerHTML=${this._svgContent}
-                ></div>`
+        ${this._svgContent
+          ? html`<div
+                class="mermaid-container"
+                @click=${this._onDiagramClick}
+                @keydown=${this._onDiagramKeydown}
+                .innerHTML=${this._svgContent}
+              ></div>
+              ${err ? this._renderWarning(err) : nothing}`
+          : this._loading
+            ? html`<div class="mermaid-loading">Rendering diagram…</div>`
+            : err
+              ? html`<div class="mermaid-error">${err.message}${err.source !== undefined
+                  ? html`<div class="mermaid-source-label">Diagram text after templates:</div><pre class="mermaid-source">${err.source}</pre>`
+                  : nothing}</div>`
               : html`<div class="mermaid-empty">
                   No diagram content defined.
                 </div>`}
@@ -651,7 +741,7 @@ class MermaidCard extends LitElement {
           @pointerup=${this._onPointerUp}
           @pointercancel=${this._onPointerUp}
         >
-          <div class="fullscreen-content"
+          <div class="fullscreen-content" inert
             style="transform: ${transform}; transform-origin: center center;"
             .innerHTML=${this._svgContent}
           ></div>

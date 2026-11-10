@@ -13,6 +13,7 @@ A custom Lovelace card that renders **Mermaid diagrams** natively in Home Assist
 - **All Mermaid diagram types**: flowchart, sequence, gantt, class, state, ER, pie, mindmap, timeline, quadrant, sankey, XY chart, block, and more
 - **Automatic theming**: Diagrams inherit your HA theme colors, fonts, and style — light or dark mode
 - **Entity templating**: Use `${states['sensor.temperature']}` in your diagram to show live entity values
+- **Clickable nodes**: Map node IDs to Home Assistant actions (toggle, more-info, navigate, perform-action)
 - **Visual card editor**: Configure everything from the UI — no YAML required
 - **Responsive**: Diagrams scale to fit the card width
 - **Accessible**: Semantic SVG output with proper contrast ratios
@@ -67,6 +68,8 @@ content: |
 | `theme`           | string   | `auto`       | `auto`, `default`, `dark`, `forest`, or `neutral`  |
 | `entities`        | string[] | —            | Additional entities to watch (auto-detected from templates) |
 | `update_interval` | number   | —            | Force re-render every N seconds                    |
+| `actions`         | map      | —            | Node or subgraph ID → action, see [Clickable Nodes](#clickable-nodes) |
+| `numeric_fallback` | number  | `0`          | Value used when a number is expected but the entity state is not numeric (`unavailable`, `unknown`, ...) |
 | `card_size`       | number   | 4            | Card height in the dashboard grid (1-20)           |
 
 ### Live Entity Data
@@ -150,8 +153,68 @@ content: |
 | `${round(states['e'], 1)}` | Round to decimals | `23.5` |
 | `${fixed(states['e'], 2)}` | Fixed decimals | `23.50` |
 | `${timestamp('entity_id')}` | Time since last change | `5m ago` |
+| `${timestamp('entity_id', 'time')}` | Time of last change (`'time'`, `'date'` or `'datetime'`) | `14:05` |
+| `${calc(states['e'] / 3, 1)}` | Math, rounded to N decimals | `7.8` |
+| `${clamp(states['e'], 0, 100)}` | Limit to a range | `100` |
+| `${min(states['a'], states['b'])}` | Smallest / largest of the values (also `max`) | `12` |
+| `${raw(states['e'])}` | Entity text without masking | `A[x]` |
 
-Supported comparison operators: `>`, `<`, `>=`, `<=`, `==`, `!=`
+Supported comparison operators: `>`, `<`, `>=`, `<=`, `==`, `!=`. Arithmetic: `+`, `-`, `*`, `/`, `%` and parentheses.
+
+Templates are parsed by a small expression parser that only knows the functions above; nothing in the diagram is run as JavaScript. The pieces combine freely:
+
+- `if()` conditions accept `states[...]`, `attr(...)`, `calc(...)` and signed numbers, e.g. `${if(attr('climate.living', 'current_temperature') < -5, 'Frost', 'OK')}`. `==` and `!=` compare text when neither side is a number: `${if(states['switch.pump'] == 'on', 'A', 'B')}`.
+- `if()` branches are expressions too, and a quoted branch may contain its own template: `${if(is_state('switch.pump', 'on'), 'Pump ${round(states["sensor.pump_power"])} W', 'Pump off')}` (use the other quote type inside).
+- `round()`, `fixed()`, `calc()`, `clamp()`, `min()` and `max()` accept any numeric expression, including `attr(...)`. A value that is not a number becomes `numeric_fallback` (default `0`).
+- `timestamp()` follows the language and time format of your Home Assistant profile (`5m ago`, `vor 5 m`, `14:05` or `02:05 PM`).
+
+An expression that does not parse is left in the diagram unchanged, so the error message shows where it is.
+
+#### Masking of Entity Values
+
+Text taken from entities (`states[...]`, `attr()`/`state_attr()`, `timestamp()`) is masked before it is inserted, so a state such as `Error: "pump [2]"` cannot break the diagram syntax. Masked characters become Mermaid entity codes, which render as the original character:
+
+| Character | Inserted as |
+| --------- | ----------- |
+| `"` | `#quot;` |
+| `#` | `#35;` |
+| `[` `]` `{` `}` `(` `)` `<` `>` `\|` `;` | `#91;` `#93;` `#123;` `#125;` `#40;` `#41;` `#60;` `#62;` `#124;` `#59;` |
+| line break | space |
+| `,` (sankey diagrams only) | `#44;` |
+
+Numeric results (`calc`, `round`, `fixed`, `clamp`, `min`, `max`, numbers in `if`) are inserted unmasked. To insert entity text as diagram syntax on purpose, for example a whole node definition kept in an `input_text`, wrap it in `raw()`: `${raw(states['input_text.extra_nodes'])}`.
+
+### Clickable Nodes
+
+Map node IDs (or subgraph IDs) to standard Home Assistant actions. Clicking the node, or focusing it with Tab and pressing Enter, runs the action exactly like a tap on a built-in card, including `confirmation`. Nodes without an action still open the fullscreen view.
+
+```yaml
+type: custom:mermaid-card
+content: |
+  graph LR
+    subgraph Kitchen
+      Pump["Pump: ${states['switch.pump']}"]
+      Temp["${states['sensor.kitchen_temp']} °C"]
+    end
+    Pump --> Temp
+actions:
+  Pump:
+    action: toggle
+    entity: switch.pump
+    confirmation: true
+  Temp:
+    action: more-info
+    entity: sensor.kitchen_temp
+  Kitchen:
+    action: navigate
+    navigation_path: /lovelace/kitchen
+```
+
+Supported actions are those of Home Assistant cards: `toggle` and `more-info` (with `entity`), `navigate` (`navigation_path`, without a page reload), `url` (`url_path`), and `perform-action` (`perform_action`, `data`, `target`; the older `call-service` with `service` also works). Subgraphs are clicked on their frame. In the visual editor, actions are edited as YAML.
+
+### Render Errors
+
+If a diagram stops rendering after an entity changes (for example because a state contains text Mermaid cannot parse even after masking), the card keeps showing the last working diagram and puts a small warning symbol in its corner. Opening it shows the error and the entities that changed since the last successful render. If the very first render fails, the card shows the error together with the diagram text after template replacement.
 
 ### Diagram Examples
 
@@ -288,6 +351,7 @@ git clone https://github.com/pajew-ski/ha-mermaid.git
 cd ha-mermaid
 npm install
 npm run dev   # Watch mode — rebuilds on changes
+npm test      # Version check plus unit tests (node:test, needs Node 22.18 or newer)
 ```
 
 Copy `dist/ha-mermaid.js` to your HA `config/www/` directory and add it as a resource.
