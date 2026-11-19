@@ -149,6 +149,8 @@ content: |
 | `${is_state('entity_id', 'on')}` | State comparison | `true` / `false` |
 | `${if(is_state('e', 'on'), 'A', 'B')}` | Conditional on state | `A` or `B` |
 | `${if(states['e'] > 25, 'A', 'B')}` | Conditional on number | `A` or `B` |
+| `${if(is_state('a', 'on') and states['e'] > 25, 'A', 'B')}` | Conditions combined with `and` / `or` | `A` or `B` |
+| `${switch(states['e'], 'heat', 'A', 'cool', 'B', 'C')}` | First matching case, else the default | `A`, `B` or `C` |
 | `${calc(states['e'] * 1.8 + 32)}` | Math expression | `73.4` |
 | `${round(states['e'], 1)}` | Round to decimals | `23.5` |
 | `${fixed(states['e'], 2)}` | Fixed decimals | `23.50` |
@@ -159,12 +161,14 @@ content: |
 | `${min(states['a'], states['b'])}` | Smallest / largest of the values (also `max`) | `12` |
 | `${raw(states['e'])}` | Entity text without masking | `A[x]` |
 
-Supported comparison operators: `>`, `<`, `>=`, `<=`, `==`, `!=`. Arithmetic: `+`, `-`, `*`, `/`, `%` and parentheses.
+Supported comparison operators: `>`, `<`, `>=`, `<=`, `==`, `!=`. Logical operators: `and`, `or`. Arithmetic: `+`, `-`, `*`, `/`, `%` and parentheses.
 
 Templates are parsed by a small expression parser that only knows the functions above; nothing in the diagram is run as JavaScript. The pieces combine freely:
 
 - `if()` conditions accept `states[...]`, `attr(...)`, `calc(...)` and signed numbers, e.g. `${if(attr('climate.living', 'current_temperature') < -5, 'Frost', 'OK')}`. `==` and `!=` compare text when neither side is a number: `${if(states['switch.pump'] == 'on', 'A', 'B')}`.
 - `if()` branches are expressions too, and a quoted branch may contain its own template: `${if(is_state('switch.pump', 'on'), 'Pump ${round(states["sensor.pump_power"])} W', 'Pump off')}` (use the other quote type inside).
+- `and` and `or` combine conditions without nesting `if()`: `${if(is_state('binary_sensor.burner', 'on') and is_state('binary_sensor.tap', 'off'), 'hot', 'warm')}`. `and` binds tighter than `or`, both looser than comparisons; parentheses group. They give `true` or `false` and stop as soon as the outcome is known.
+- `switch(value, case, result, ..., default)` gives the result after the first case equal to the value (compared as `==`: numbers as numbers, otherwise text), else the default, else nothing: `${switch(attr('water_heater.boiler', 'display_code'), 0, 'hot', 1, 'warm', 'off')}`. As with `if()`, a quoted result may contain its own template.
 - `round()`, `fixed()`, `calc()`, `clamp()`, `min()` and `max()` accept any numeric expression, including `attr(...)`. A value that is not a number becomes `numeric_fallback` (default `0`).
 - `timestamp()` follows the language and time format of your Home Assistant profile (`5m ago`, `vor 5 m`, `14:05` or `02:05 PM`).
 
