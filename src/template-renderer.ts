@@ -19,6 +19,11 @@ import type { HomeAssistant } from "./types";
  *   ${timestamp('e', 'time')}           absolute: 'time', 'date' or 'datetime'
  *   ${style_class('e', 'on:active', 'off:inactive')}
  *   ${raw(expr)}                        insert entity text without masking
+ *   a and b, a or b                     true / false, left to right,
+ *                                       below comparisons; `and` before `or`
+ *   ${switch(v, 'a', x, 'b', y, z)}     the result after the first
+ *                                       case equal to v (as ==), else z or "";
+ *                                       quoted results may contain ${...}
  *
  * Text that comes from entities (states, attr, timestamp) is masked so it
  * cannot break Mermaid syntax; numeric results are inserted as they are.
@@ -41,6 +46,8 @@ type Node =
   | { t: "state"; id: string }
   | { t: "call"; name: string; args: Node[] }
   | { t: "bin"; op: string; l: Node; r: Node }
+  // `and` / `or`, evaluated left to right, stopping as soon as the outcome is known.
+  | { t: "logic"; op: "and" | "or"; l: Node; r: Node }
   | { t: "neg"; e: Node };
 
 const ARITY: Record<string, [number, number]> = {
@@ -57,6 +64,8 @@ const ARITY: Record<string, [number, number]> = {
   timestamp: [1, 2],
   style_class: [1, Infinity],
   raw: [1, 1],
+  // switch(value, case, result, ..., default)
+  switch: [3, Infinity],
 };
 
 const COMPARISONS = [">=", "<=", "==", "!=", ">", "<"];
@@ -121,6 +130,22 @@ function parse(src: string, start: number): { node: Node; end: number } {
     return v;
   };
 
+  // `or` binds loosest, then `and`, then the comparisons below. A word operator must
+  // stand alone (`and` but not `android`).
+  const word = (w: string): boolean => {
+    ws();
+    if (!src.startsWith(w, i) || /[\w.]/.test(src[i + w.length] ?? "")) return false;
+    i += w.length;
+    return true;
+  };
+  const logic = (op: "and" | "or", next: () => Node) => (): Node => {
+    let l = next();
+    while (word(op)) l = { t: "logic", op, l, r: next() };
+    return l;
+  };
+  const and = (): Node => logic("and", comparison)();
+  const or = (): Node => logic("or", and)();
+
   const comparison = (): Node => {
     const l = additive();
     ws();
@@ -151,7 +176,7 @@ function parse(src: string, start: number): { node: Node; end: number } {
     const s = quoted();
     if (s !== null) return { t: "lit", v: s };
     if (eat("(")) {
-      const e = comparison();
+      const e = or();
       expect(")");
       return e;
     }
@@ -169,7 +194,7 @@ function parse(src: string, start: number): { node: Node; end: number } {
     expect("(");
     const args: Node[] = [];
     if (!eat(")")) {
-      do args.push(comparison());
+      do args.push(or());
       while (eat(","));
       expect(")");
     }
@@ -177,7 +202,7 @@ function parse(src: string, start: number): { node: Node; end: number } {
     return { t: "call", name, args };
   };
 
-  const node = comparison();
+  const node = or();
   expect("}");
   return { node, end: i };
 }
@@ -255,14 +280,29 @@ export function renderTemplate(
           case ">=": return num(l) >= num(r);
           case "<=": return num(l) <= num(r);
         }
-        // == and != compare numbers when either side is a number, text otherwise
-        const numeric = typeof l === "number" || typeof r === "number";
-        const equal = numeric ? num(l) === num(r) : text(l) === text(r);
+        const equal = equals(l, r);
         return node.op === "==" ? equal : !equal;
+      }
+      case "logic": {
+        const l = truthy(evaluate(node.l));
+        if (node.op === "and" ? !l : l) return l;
+        return truthy(evaluate(node.r));
       }
       case "call":
         return call(node.name, node.args);
     }
+  };
+
+  // == and != compare numbers when either side is a number, text otherwise
+  const equals = (l: Value, r: Value): boolean =>
+    typeof l === "number" || typeof r === "number" ? num(l) === num(r) : text(l) === text(r);
+
+  // A result chosen by if or switch: a quoted one may contain its own ${...} expressions.
+  const result = (branch: Node | undefined): Value => {
+    if (!branch) return "";
+    return branch.t === "lit" && typeof branch.v === "string" && branch.v.includes("${")
+      ? render(branch.v)
+      : evaluate(branch);
   };
 
   const call = (name: string, args: Node[]): Value => {
@@ -275,13 +315,14 @@ export function renderTemplate(
         return { entity: getAttr(text(arg(0)), text(arg(1))) };
       case "timestamp":
         return { entity: timestamp(text(arg(0)), args[1] ? text(arg(1)) : undefined) };
-      case "if": {
-        const branch = truthy(arg(0)) ? args[1] : args[2];
-        if (!branch) return "";
-        // A quoted branch may contain its own ${...} expressions.
-        return branch.t === "lit" && typeof branch.v === "string" && branch.v.includes("${")
-          ? render(branch.v)
-          : evaluate(branch);
+      case "if":
+        return result(truthy(arg(0)) ? args[1] : args[2]);
+      case "switch": {
+        // The result after the first case equal to the value; a last unpaired
+        // argument is the default.
+        const value = arg(0);
+        for (let k = 1; k + 1 < args.length; k += 2) if (equals(value, arg(k))) return result(args[k + 1]);
+        return result(args.length % 2 === 0 ? args[args.length - 1] : undefined);
       }
       case "calc":
         return args[1] ? num(arg(0)).toFixed(digits(arg(1))) : num(arg(0));
